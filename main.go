@@ -24,33 +24,46 @@ Usage:
 Global flags:
   -dry-run       print the resulting file instead of writing it
   -no-backup     do not create a $HOME/.rap/backup copy before writing
+
 Text arguments:
   text           literal text
   @path          read text from path
   @-             read text from stdin
   @b64:BASE64    decode text from base64
+  @inv:NAME      read text from this project's inventory
   @@text         literal text starting with @
 
 Commands:
   q  [-token] TEXT              inspect quoting risk and recommend an argument form
+  m  FILE TEXT                  print literal match locations and count
+  inv put NAME TEXT             store reusable project text
+  inv get|rm|path NAME          read, remove, or locate inventory text
+  inv list                      list reusable project text names
   s  [-all] FILE OLD NEW        replace literal OLD with NEW
   ia FILE NEEDLE TEXT           insert TEXT after NEEDLE
   ib FILE NEEDLE TEXT           insert TEXT before NEEDLE
   br FILE START END TEXT        replace text between START and END, keeping markers
   lr FILE FROM TO TEXT          replace 1-based inclusive line range
   dl FILE FROM TO               delete 1-based inclusive line range
+  mark FILE FROM TO NAME        wrap range with language-aware markers
+  mv FILE FROM TO DEST          move line range before DEST line
+  trim FILE [FROM TO]           strip trailing whitespace and clean newlines
+  indent FILE FROM TO REF        reindent range using REF line indentation
   revert FILE [BACKUP]          restore FILE from BACKUP or its latest backup
 
 Examples:
-  rap s README.md 'old' 'new'
   rap q -token @/tmp/replacement.txt
+  rap m README.md 'old'
+  rap inv put marker '<!-- generated:start -->'
+  rap s README.md 'old' 'new'
   rap s -all app.go @/tmp/old.txt @/tmp/new.txt
   rap ia main.go 'func main() {' @/tmp/insert.txt
   rap br config.yml '# rap:start' '# rap:end' @/tmp/block.yml
   rap lr README.md 10 12 @/tmp/replacement.md
-  rap revert README.md
-  rap br config.yml '# rap:start' '# rap:end' @/tmp/block.yml
-  rap lr README.md 10 12 @/tmp/replacement.md
+  rap mv README.md 20 30 10
+  rap mark main.go 20 35 generated
+  rap trim README.md
+  rap indent main.go 20 28 19
   rap revert README.md
 `
 
@@ -99,6 +112,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	switch cmd {
 	case "q", "quote":
 		return cmdQuote(cmdArgs, stdin, stdout)
+	case "m", "match":
+		return cmdMatch(cmdArgs, stdin, stdout)
+	case "inv", "inventory":
+		return cmdInventory(cmdArgs, stdin, stdout)
 	case "s":
 		return cmdSubstitute(opts, cmdArgs, stdin, stdout)
 	case "ia", "ib":
@@ -107,6 +124,14 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return cmdBlockReplace(opts, cmdArgs, stdin, stdout)
 	case "lr":
 		return cmdLineReplace(opts, cmdArgs, stdin, stdout)
+	case "mark":
+		return cmdMark(opts, cmdArgs, stdout)
+	case "trim":
+		return cmdTrim(opts, cmdArgs, stdout)
+	case "indent":
+		return cmdIndent(opts, cmdArgs, stdout)
+	case "mv", "move":
+		return cmdMove(opts, cmdArgs, stdout)
 	case "dl":
 		return cmdLineDelete(opts, cmdArgs, stdout)
 	case "revert":
@@ -144,6 +169,137 @@ func cmdQuote(args []string, stdin io.Reader, stdout io.Writer) error {
 	fmt.Fprintf(stdout, "recommended: %s\n", recommendation(text))
 	fmt.Fprintf(stdout, "token: %s\n", token)
 	return nil
+}
+
+func cmdMatch(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) != 2 {
+		return errors.New("usage: rap m FILE TEXT")
+	}
+	file := args[0]
+	needle, err := textArg(args[1], stdin)
+	if err != nil {
+		return err
+	}
+	if needle == "" {
+		return errors.New("TEXT must not be empty")
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	needleBytes := []byte(needle)
+	offset := 0
+	count := 0
+	for {
+		idx := bytes.Index(data[offset:], needleBytes)
+		if idx < 0 {
+			break
+		}
+		pos := offset + idx
+		line, col := byteLineCol(data, pos)
+		fmt.Fprintf(stdout, "%s:%d:%d\n", file, line, col)
+		count++
+		offset = pos + len(needleBytes)
+	}
+	fmt.Fprintf(stdout, "matches: %d\n", count)
+	return nil
+}
+
+func cmdInventory(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("usage: rap inv <put|get|list|rm|path> ...")
+	}
+	switch args[0] {
+	case "put":
+		if len(args) != 3 {
+			return errors.New("usage: rap inv put NAME TEXT")
+		}
+		text, err := textArg(args[2], stdin)
+		if err != nil {
+			return err
+		}
+		path, err := inventoryPath(args[1])
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "stored %s\n", args[1])
+		return nil
+	case "get":
+		if len(args) != 2 {
+			return errors.New("usage: rap inv get NAME")
+		}
+		text, err := inventoryText(args[1])
+		if err != nil {
+			return err
+		}
+		_, err = io.WriteString(stdout, text)
+		return err
+	case "list":
+		if len(args) != 1 {
+			return errors.New("usage: rap inv list")
+		}
+		dir, err := inventoryDir()
+		if err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		var names []string
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				names = append(names, entry.Name())
+			}
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Fprintln(stdout, name)
+		}
+		return nil
+	case "rm":
+		if len(args) != 2 {
+			return errors.New("usage: rap inv rm NAME")
+		}
+		path, err := inventoryPath(args[1])
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		fmt.Fprintf(stdout, "removed %s\n", args[1])
+		return nil
+	case "path":
+		if len(args) != 1 && len(args) != 2 {
+			return errors.New("usage: rap inv path [NAME]")
+		}
+		if len(args) == 1 {
+			dir, err := inventoryDir()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, dir)
+			return nil
+		}
+		path, err := inventoryPath(args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(stdout, path)
+		return nil
+	default:
+		return fmt.Errorf("unknown inventory command %q", args[0])
+	}
 }
 
 func cmdSubstitute(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
@@ -295,6 +451,151 @@ func cmdLineReplace(opts options, args []string, stdin io.Reader, stdout io.Writ
 	})
 }
 
+func cmdMark(opts options, args []string, stdout io.Writer) error {
+	if len(args) != 4 {
+		return errors.New("usage: rap mark FILE FROM TO NAME")
+	}
+	file := args[0]
+	from, to, err := parseRange(args[1], args[2])
+	if err != nil {
+		return err
+	}
+	name := args[3]
+	if !validInventoryName(name) {
+		return fmt.Errorf("invalid marker name %q; use letters, numbers, dot, dash, or underscore", name)
+	}
+	return editFile(opts, file, stdout, func(data []byte) (editResult, error) {
+		start, end, err := lineByteRange(data, from, to)
+		if err != nil {
+			return editResult{}, err
+		}
+		lineEnd, err := lineStartOffset(data, from+1)
+		if err != nil {
+			lineEnd = end
+		}
+		indent := leadingIndent(lineWithoutNewline(data[start:lineEnd]))
+		startMarker, endMarker := markerLines(file, name, indent)
+		if bytes.Contains(data, bytes.TrimRight(startMarker, "\n")) || bytes.Contains(data, bytes.TrimRight(endMarker, "\n")) {
+			return editResult{}, fmt.Errorf("marker %q already exists", name)
+		}
+		block := data[start:end]
+		out := make([]byte, 0, len(data)+len(startMarker)+len(endMarker)+1)
+		out = append(out, data[:start]...)
+		out = append(out, startMarker...)
+		out = append(out, block...)
+		if len(block) > 0 && block[len(block)-1] != '\n' {
+			out = append(out, '\n')
+		}
+		out = append(out, endMarker...)
+		out = append(out, data[end:]...)
+		return editResult{data: out, changed: true}, nil
+	})
+}
+
+func cmdTrim(opts options, args []string, stdout io.Writer) error {
+	if len(args) != 1 && len(args) != 3 {
+		return errors.New("usage: rap trim FILE [FROM TO]")
+	}
+	file := args[0]
+	return editFile(opts, file, stdout, func(data []byte) (editResult, error) {
+		if len(args) == 1 {
+			return editResult{data: cleanWhitespace(data, true), changed: true}, nil
+		}
+		from, to, err := parseRange(args[1], args[2])
+		if err != nil {
+			return editResult{}, err
+		}
+		start, end, err := lineByteRange(data, from, to)
+		if err != nil {
+			return editResult{}, err
+		}
+		cleaned := cleanWhitespace(data[start:end], false)
+		out := make([]byte, 0, len(data)-(end-start)+len(cleaned))
+		out = append(out, data[:start]...)
+		out = append(out, cleaned...)
+		out = append(out, data[end:]...)
+		return editResult{data: out, changed: true}, nil
+	})
+}
+
+func cmdIndent(opts options, args []string, stdout io.Writer) error {
+	if len(args) != 4 {
+		return errors.New("usage: rap indent FILE FROM TO REF")
+	}
+	file := args[0]
+	from, to, err := parseRange(args[1], args[2])
+	if err != nil {
+		return err
+	}
+	ref, err := strconv.Atoi(args[3])
+	if err != nil {
+		return fmt.Errorf("REF must be an integer: %w", err)
+	}
+	if ref < 1 {
+		return errors.New("REF must be 1-based")
+	}
+	return editFile(opts, file, stdout, func(data []byte) (editResult, error) {
+		start, end, err := lineByteRange(data, from, to)
+		if err != nil {
+			return editResult{}, err
+		}
+		refStart, refEnd, err := lineByteRange(data, ref, ref)
+		if err != nil {
+			return editResult{}, err
+		}
+		refIndent := leadingIndent(lineWithoutNewline(data[refStart:refEnd]))
+		block := reindentBlock(data[start:end], refIndent)
+		out := make([]byte, 0, len(data)-(end-start)+len(block))
+		out = append(out, data[:start]...)
+		out = append(out, block...)
+		out = append(out, data[end:]...)
+		return editResult{data: out, changed: true}, nil
+	})
+}
+
+func cmdMove(opts options, args []string, stdout io.Writer) error {
+	if len(args) != 4 {
+		return errors.New("usage: rap mv FILE FROM TO DEST")
+	}
+	file := args[0]
+	from, to, err := parseRange(args[1], args[2])
+	if err != nil {
+		return err
+	}
+	dest, err := strconv.Atoi(args[3])
+	if err != nil {
+		return fmt.Errorf("DEST must be an integer: %w", err)
+	}
+	if dest < 1 {
+		return errors.New("DEST must be 1-based")
+	}
+	return editFile(opts, file, stdout, func(data []byte) (editResult, error) {
+		start, end, err := lineByteRange(data, from, to)
+		if err != nil {
+			return editResult{}, err
+		}
+		destOffset, err := lineStartOffset(data, dest)
+		if err != nil {
+			return editResult{}, err
+		}
+		if destOffset >= start && destOffset <= end {
+			return editResult{data: data, changed: false}, nil
+		}
+		block := append([]byte(nil), data[start:end]...)
+		without := make([]byte, 0, len(data)-(end-start))
+		without = append(without, data[:start]...)
+		without = append(without, data[end:]...)
+		if destOffset > end {
+			destOffset -= end - start
+		}
+		out := make([]byte, 0, len(data))
+		out = append(out, without[:destOffset]...)
+		out = append(out, block...)
+		out = append(out, without[destOffset:]...)
+		return editResult{data: out, changed: true}, nil
+	})
+}
+
 func cmdLineDelete(opts options, args []string, stdout io.Writer) error {
 	if len(args) != 3 {
 		return errors.New("usage: rap dl FILE FROM TO")
@@ -395,6 +696,9 @@ func textArg(arg string, stdin io.Reader) (string, error) {
 		}
 		return string(data), nil
 	}
+	if strings.HasPrefix(arg, "@inv:") {
+		return inventoryText(arg[len("@inv:"):])
+	}
 	if strings.HasPrefix(arg, "@") {
 		data, err := os.ReadFile(arg[1:])
 		return string(data), err
@@ -474,6 +778,179 @@ func lineCount(text string) int {
 	return lines
 }
 
+type commentStyle struct {
+	prefix string
+	suffix string
+}
+
+func markerLines(file, name string, indent []byte) ([]byte, []byte) {
+	style := commentStyleFor(file)
+	start := markerLine(style, indent, "rap:start "+name)
+	end := markerLine(style, indent, "rap:end "+name)
+	return start, end
+}
+
+func markerLine(style commentStyle, indent []byte, label string) []byte {
+	var out []byte
+	out = append(out, indent...)
+	out = append(out, style.prefix...)
+	if style.prefix != "" && !strings.HasSuffix(style.prefix, " ") {
+		out = append(out, ' ')
+	}
+	out = append(out, label...)
+	if style.suffix != "" {
+		out = append(out, ' ')
+		out = append(out, style.suffix...)
+	}
+	out = append(out, '\n')
+	return out
+}
+
+func commentStyleFor(file string) commentStyle {
+	switch strings.ToLower(filepath.Ext(file)) {
+	case ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".c", ".h", ".cc", ".cpp", ".cs", ".rs", ".swift", ".kt", ".kts", ".scala", ".php":
+		return commentStyle{prefix: "//"}
+	case ".py", ".rb", ".sh", ".bash", ".zsh", ".fish", ".yaml", ".yml", ".toml", ".ini", ".conf", ".cfg", ".dockerfile", ".mk", ".make":
+		return commentStyle{prefix: "#"}
+	case ".sql", ".lua", ".hs", ".elm":
+		return commentStyle{prefix: "--"}
+	case ".html", ".htm", ".xml", ".md", ".markdown", ".vue", ".svelte":
+		return commentStyle{prefix: "<!--", suffix: "-->"}
+	case ".css", ".scss", ".sass", ".less":
+		return commentStyle{prefix: "/*", suffix: "*/"}
+	case ".el", ".lisp", ".clj", ".cljs", ".scm":
+		return commentStyle{prefix: ";;"}
+	default:
+		base := strings.ToLower(filepath.Base(file))
+		if base == "dockerfile" || strings.HasPrefix(base, "makefile") {
+			return commentStyle{prefix: "#"}
+		}
+		return commentStyle{prefix: "#"}
+	}
+}
+
+func cleanWhitespace(data []byte, finalNewline bool) []byte {
+	data = bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	data = bytes.ReplaceAll(data, []byte("\r"), []byte("\n"))
+	lines := bytes.SplitAfter(data, []byte("\n"))
+	out := make([]byte, 0, len(data))
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		hasNewline := line[len(line)-1] == '\n'
+		body := line
+		if hasNewline {
+			body = line[:len(line)-1]
+		}
+		body = bytes.TrimRight(body, " \t")
+		out = append(out, body...)
+		if hasNewline {
+			out = append(out, '\n')
+		}
+	}
+	out = bytes.TrimRight(out, " \t\n")
+	if finalNewline && len(out) > 0 {
+		out = append(out, '\n')
+	}
+	return out
+}
+
+func reindentBlock(data []byte, refIndent []byte) []byte {
+	lines := splitLines(data)
+	common := commonIndent(lines)
+	out := make([]byte, 0, len(data)+len(lines)*len(refIndent))
+	for _, line := range lines {
+		body, newline := splitLineEnding(line)
+		trimmed := bytes.TrimRight(body, " \t")
+		if len(bytes.TrimSpace(trimmed)) == 0 {
+			out = append(out, newline...)
+			continue
+		}
+		out = append(out, refIndent...)
+		out = append(out, trimIndent(trimmed, common)...)
+		out = append(out, newline...)
+	}
+	return out
+}
+
+func splitLines(data []byte) [][]byte {
+	if len(data) == 0 {
+		return nil
+	}
+	var lines [][]byte
+	start := 0
+	for i, b := range data {
+		if b == '\n' {
+			lines = append(lines, data[start:i+1])
+			start = i + 1
+		}
+	}
+	if start < len(data) {
+		lines = append(lines, data[start:])
+	}
+	return lines
+}
+
+func splitLineEnding(line []byte) ([]byte, []byte) {
+	if len(line) > 0 && line[len(line)-1] == '\n' {
+		return line[:len(line)-1], line[len(line)-1:]
+	}
+	return line, nil
+}
+
+func lineWithoutNewline(line []byte) []byte {
+	body, _ := splitLineEnding(line)
+	return bytes.TrimRight(body, "\r")
+}
+
+func leadingIndent(line []byte) []byte {
+	idx := 0
+	for idx < len(line) && (line[idx] == ' ' || line[idx] == '\t') {
+		idx++
+	}
+	return append([]byte(nil), line[:idx]...)
+}
+
+func commonIndent(lines [][]byte) []byte {
+	var common []byte
+	set := false
+	for _, line := range lines {
+		body, _ := splitLineEnding(line)
+		body = bytes.TrimRight(body, " \t\r")
+		if len(bytes.TrimSpace(body)) == 0 {
+			continue
+		}
+		indent := leadingIndent(body)
+		if !set {
+			common = append([]byte(nil), indent...)
+			set = true
+			continue
+		}
+		common = sharedPrefix(common, indent)
+	}
+	return common
+}
+
+func sharedPrefix(a, b []byte) []byte {
+	limit := len(a)
+	if len(b) < limit {
+		limit = len(b)
+	}
+	idx := 0
+	for idx < limit && a[idx] == b[idx] {
+		idx++
+	}
+	return a[:idx]
+}
+
+func trimIndent(line, indent []byte) []byte {
+	if len(indent) == 0 || !bytes.HasPrefix(line, indent) {
+		return line
+	}
+	return line[len(indent):]
+}
+
 func parseRange(fromText, toText string) (int, int, error) {
 	from, err := strconv.Atoi(fromText)
 	if err != nil {
@@ -487,6 +964,29 @@ func parseRange(fromText, toText string) (int, int, error) {
 		return 0, 0, errors.New("line range must be 1-based and FROM <= TO")
 	}
 	return from, to, nil
+}
+
+func lineStartOffset(data []byte, line int) (int, error) {
+	if line < 1 {
+		return 0, errors.New("line must be 1-based")
+	}
+	if line == 1 {
+		return 0, nil
+	}
+	current := 1
+	for i, b := range data {
+		if b != '\n' {
+			continue
+		}
+		current++
+		if current == line {
+			return i + 1, nil
+		}
+	}
+	if line == current+1 {
+		return len(data), nil
+	}
+	return 0, errors.New("DEST is past end of file")
 }
 
 func lineByteRange(data []byte, from, to int) (int, int, error) {
@@ -553,6 +1053,70 @@ func latestBackup(file string) (string, error) {
 	}
 	sort.Strings(backups)
 	return backups[len(backups)-1], nil
+}
+
+func byteLineCol(data []byte, pos int) (int, int) {
+	line := 1
+	col := 1
+	for i := 0; i < pos && i < len(data); i++ {
+		if data[i] == '\n' {
+			line++
+			col = 1
+			continue
+		}
+		col++
+	}
+	return line, col
+}
+
+func inventoryText(name string) (string, error) {
+	path, err := inventoryPath(name)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(path)
+	return string(data), err
+}
+
+func inventoryPath(name string) (string, error) {
+	if !validInventoryName(name) {
+		return "", fmt.Errorf("invalid inventory name %q; use letters, numbers, dot, dash, or underscore", name)
+	}
+	dir, err := inventoryDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
+
+func inventoryDir() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".rap", "project", backupKey(filepath.Clean(wd)), "inventory"), nil
+}
+
+func validInventoryName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		switch r {
+		case '.', '-', '_':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func backupDir(file string) (string, string, error) {

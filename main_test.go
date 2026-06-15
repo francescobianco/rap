@@ -62,6 +62,65 @@ func TestSubstituteWithBase64Argument(t *testing.T) {
 	}
 }
 
+func TestInventoryCanStoreAndReuseProjectText(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	file := "file.txt"
+	if err := os.WriteFile(file, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"inv", "put", "replacement", "new\n"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"-no-backup", "s", file, "old\n", "@inv:replacement"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+
+	out.Reset()
+	if err := run([]string{"inv", "list"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != "replacement" {
+		t.Fatalf("unexpected inventory list: %q", out.String())
+	}
+}
+
+func TestMatchReportsLocationsAndCount(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("one\ntwo one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"m", file, "one"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, file+":1:1") || !strings.Contains(got, file+":2:5") || !strings.Contains(got, "matches: 2") {
+		t.Fatalf("unexpected match output: %q", got)
+	}
+}
+
 func TestSubstituteRequiresUniqueMatch(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file.txt")
@@ -149,6 +208,132 @@ func TestLineReplaceFromStdin(t *testing.T) {
 	}
 	if string(got) != "a\nB\nc\n" {
 		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestMarkWrapsGoRangeWithLineComments(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.go")
+	input := "package main\n\nfunc x() {\n\tprintln(1)\n}\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "mark", file, "4", "4", "body"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "package main\n\nfunc x() {\n\t// rap:start body\n\tprintln(1)\n\t// rap:end body\n}\n"
+	if string(got) != want {
+		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
+	}
+}
+
+func TestMarkWrapsMarkdownRangeWithHtmlComments(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "README.md")
+	input := "# Title\n\nbody\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "mark", file, "3", "3", "section"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Title\n\n<!-- rap:start section -->\nbody\n<!-- rap:end section -->\n"
+	if string(got) != want {
+		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
+	}
+}
+
+func TestMoveLineRangeBeforeDestination(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a\nb\nc\nd\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "mv", file, "3", "4", "2"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "a\nc\nd\nb\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestMoveLineRangeDownAndAppend(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a\nb\nc\nd\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "mv", file, "1", "2", "5"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "c\nd\na\nb\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestTrimCleansTrailingWhitespaceAndFinalNewline(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a  \r\nb\t\n\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "trim", file}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "a\nb\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestIndentUsesReferenceLineIndent(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	input := "func x() {\n    if ok {\na\n  b\n    }\n}\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "indent", file, "3", "4", "2"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "func x() {\n    if ok {\n    a\n      b\n    }\n}\n"
+	if string(got) != want {
+		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
 	}
 }
 

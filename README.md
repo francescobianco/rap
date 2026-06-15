@@ -52,6 +52,36 @@ This is the most important quoting escape hatch. If text contains quotes, backsl
 
 ## Commands
 
+### Project inventory
+
+```sh
+rap inv put NAME TEXT
+rap inv get NAME
+rap inv list
+rap inv rm NAME
+rap inv path [NAME]
+```
+
+Inventory stores reusable snippets for the current project under `$HOME/.rap/project/<pwd-with-dashes>/inventory`. Use it for markers, boilerplate, generated blocks, or any text an agent would otherwise keep re-quoting until everyone involved loses patience.
+
+```sh
+rap inv put start '<!-- generated:start -->'
+rap inv put end '<!-- generated:end -->'
+rap br README.md @inv:start @inv:end @/tmp/generated.md
+```
+
+### Match preflight
+
+```sh
+rap m FILE TEXT
+```
+
+`m` prints every literal match location and a final count. Run it before `s`, `ia`, `ib`, or `br` when uniqueness is not obvious.
+
+```sh
+rap m README.md @inv:start
+```
+
 ### Quoting preflight
 
 ```sh
@@ -116,6 +146,41 @@ rap br config.yml '# rap:start' '# rap:end' @/tmp/generated.yml
 
 ### Replace or delete line ranges
 
+### Move, trim, and reindent line ranges
+
+### Add manipulation handles
+
+```sh
+rap mark FILE FROM TO NAME
+```
+
+`mark` wraps a line range with language-aware `rap:start NAME` and `rap:end NAME` comments. It turns anonymous code into a stable target for later `br`, `m`, `mv`, `trim`, or `indent` operations.
+
+```sh
+rap mark main.go 80 110 generated-loader
+rap br main.go '// rap:start generated-loader' '// rap:end generated-loader' @/tmp/new-loader.go
+```
+
+For Markdown and HTML-family files it uses `<!-- rap:start NAME -->`; for Go/JS/C-style files it uses `//`; for Python/YAML/shell it uses `#`; for CSS it uses `/* ... */`.
+
+```sh
+rap mv FILE FROM TO DEST
+rap trim FILE [FROM TO]
+rap indent FILE FROM TO REF
+```
+
+`mv` moves the inclusive line range `FROM..TO` before line `DEST` in the same file, using coordinates from the original file. Use it instead of doing delete-plus-insert and then pretending line numbers did not shift.
+
+`trim` removes trailing spaces/tabs, normalizes dirty line endings, and leaves a clean final newline for whole-file runs. With `FROM TO`, it cleans only that range.
+
+`indent` reindents a range using the indentation of line `REF` as the base while preserving relative indentation inside the moved or generated block.
+
+```sh
+rap mv README.md 40 52 20
+rap trim README.md
+rap indent main.go 80 95 79
+```
+
 ```sh
 rap lr FILE FROM TO TEXT
 rap dl FILE FROM TO
@@ -138,6 +203,16 @@ rap revert FILE BACKUP
 Before each write, RAP stores the previous version under `$HOME/.rap/backup`. `rap revert FILE` restores the latest backup for that file. Passing an explicit backup path restores that snapshot instead.
 
 Backup directories are derived from absolute file paths by replacing path separators with dashes. For example, `/home/francesco/project/mio-dir/mio-file` is stored under `$HOME/.rap/backup/-home-francesco-project-mio-dir-mio-file`.
+
+## Agent Adoption
+
+RAP is meant to be discovered without a human repeating the same instruction in every prompt. This repository includes:
+
+- `AGENTS.md` for Codex/OpenAI-style coding agents
+- `CLAUDE.md` for Claude Code
+- `README.md` command docs for every other agent that scans project documentation
+
+Agents should read those files and use RAP as the default edit path. The short rule is: inspect with `rap m`, control quoting with `rap q`, reuse snippets with `rap inv`, edit with RAP commands, revert with `rap revert`.
 
 ## Agent Notes
 
