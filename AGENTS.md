@@ -23,8 +23,8 @@ rap inv put marker '<!-- generated:start -->'
 rap write /tmp/payload @b64:aGVsbG8K
 rap append FILE @/tmp/generated.txt
 rap prepend FILE @/tmp/header.txt
-rap preview FILE FROM TO -- s [-pad N] OLD NEW
-rap preview -o /tmp/snippet FILE FROM TO -- ia NEEDLE TEXT
+rap preview [-n] FILE FROM TO -- s [-pad N] OLD NEW
+rap preview [-n] -o /tmp/snippet FILE FROM TO -- ia NEEDLE TEXT
 rap s [-pad N] [-trim] [-indent REF] FILE OLD NEW
 rap ia [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
 rap br [-pad N] [-trim] [-indent REF] FILE START END @/tmp/block.txt

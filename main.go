@@ -44,7 +44,7 @@ Commands:
                                            append TEXT to FILE
   prepend [-pad N] [-trim] [-indent REF] FILE TEXT
                                            prepend TEXT to FILE
-  preview [-o OUT] FILE FROM TO -- COMMAND [ARGS...]
+  preview [-n] [-o OUT] FILE FROM TO -- COMMAND [ARGS...]
                                            print selected lines after a RAP edit preview
   s  [-all] [-pad N] [-trim] [-indent REF] FILE OLD NEW
                                            replace literal OLD with NEW
@@ -77,6 +77,7 @@ Examples:
   rap append notes.md @/tmp/generated.md
   rap prepend notes.md '# Title\n\n'
   rap preview app.go 10 20 -- s 'old' 'new'
+  rap preview -n app.go 10 20 -- s 'old' 'new'
   rap preview -o /tmp/snippet.go app.go 10 20 -- ia 'func main() {' @/tmp/insert.txt
   rap s README.md 'old' 'new'
   rap s -pad 4 app.go 'old()' 'new()'
@@ -474,6 +475,7 @@ func cmdAppendPrepend(opts options, cmd string, args []string, stdin io.Reader, 
 
 func cmdPreview(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
+	lineNumbers := fs.Bool("n", false, "")
 	outPath := fs.String("o", "", "")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -487,7 +489,7 @@ func cmdPreview(opts options, args []string, stdin io.Reader, stdout io.Writer) 
 		}
 	}
 	if sep < 0 || sep+1 >= len(rest) || sep != 3 {
-		return errors.New("usage: rap preview [-o OUT] FILE FROM TO -- COMMAND [ARGS...]")
+		return errors.New("usage: rap preview [-n] [-o OUT] FILE FROM TO -- COMMAND [ARGS...]")
 	}
 	file := rest[0]
 	from, to, err := parseRange(rest[1], rest[2])
@@ -530,6 +532,9 @@ func cmdPreview(opts options, args []string, stdin io.Reader, stdout io.Writer) 
 		return err
 	}
 	snippet := result[start:end]
+	if *lineNumbers {
+		snippet = numberLines(snippet, from, to)
+	}
 	if *outPath == "" || opts.dryRun {
 		_, err := stdout.Write(snippet)
 		return err
@@ -539,6 +544,21 @@ func cmdPreview(opts options, args []string, stdin io.Reader, stdout io.Writer) 
 	}
 	fmt.Fprintf(stdout, "wrote %s\n", *outPath)
 	return nil
+}
+
+func numberLines(data []byte, from, to int) []byte {
+	width := len(strconv.Itoa(to))
+	out := bytes.Buffer{}
+	line := from
+	for _, chunk := range splitLines(data) {
+		fmt.Fprintf(&out, "%*d | ", width, line)
+		out.Write(chunk)
+		if len(chunk) == 0 || chunk[len(chunk)-1] != '\n' {
+			out.WriteByte('\n')
+		}
+		line++
+	}
+	return out.Bytes()
 }
 
 func previewCommandArgs(cmd, file string, args []string) ([]string, error) {

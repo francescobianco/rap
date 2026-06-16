@@ -10,6 +10,7 @@ Do this:
 - Add stable handles with `rap mark FILE FROM TO NAME` before repeated manipulation of the same block.
 - Use `@file`, `@-`, or `@b64:...` for text that contains quotes, newlines, JSON, shell syntax, or Markdown.
 - Use `rap preview FILE FROM TO -- COMMAND ...` to inspect a selected line range after a RAP edit without changing the source file.
+- Add `-n` to `rap preview` when the output should include edited-result line numbers.
 - Use `rap preview -o OUT FILE FROM TO -- COMMAND ...` to save that preview block.
 - Use `rap write FILE TEXT` for temporary payload files instead of heredocs or helper scripts.
 - Use `rap append FILE TEXT` and `rap prepend FILE TEXT` when no marker is needed.
@@ -29,8 +30,8 @@ rap q -token @/tmp/generated.txt
 rap m src/app.go 'func main() {'
 rap write /tmp/payload @b64:aGVsbG8K
 rap append CHANGELOG.md @/tmp/generated-entry.md
-rap preview src/app.go 10 20 -- s -pad 4 'old()' 'new()'
-rap preview -o /tmp/snippet.go src/app.go 10 20 -- ia 'func main() {' @/tmp/insert.txt
+rap preview -n src/app.go 10 20 -- s -pad 4 'old()' 'new()'
+rap preview -n -o /tmp/snippet.go src/app.go 10 20 -- ia 'func main() {' @/tmp/insert.txt
 rap s -pad 4 src/app.go 'old()' 'new()'
 rap ia -trim src/app.go 'func main() {' @/tmp/insert.txt
 rap br -indent 20 README.md '<!-- generated:start -->' '<!-- generated:end -->' @/tmp/block.md

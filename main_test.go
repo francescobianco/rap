@@ -352,6 +352,24 @@ func TestPreviewWritesSelectedLinesToOutputFile(t *testing.T) {
 	}
 }
 
+func TestPreviewLineNumbersTrackEditedResult(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"preview", "-n", file, "1", "3", "--", "ia", "a", "\nA"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "1 | a\n2 | A\n3 | b\n"
+	if out.String() != want {
+		t.Fatalf("unexpected preview output:\nwant %q\n got %q", want, out.String())
+	}
+}
+
 func TestPreviewInjectsFileAfterCommandFlags(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file.txt")
