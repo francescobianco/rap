@@ -301,6 +301,75 @@ func TestMoveIndentReindentsMovedBlock(t *testing.T) {
 	}
 }
 
+func TestPreviewShowsSelectedLinesAfterSubstitution(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	input := "one\ntwo old\nthree\nfour\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"preview", file, "2", "3", "--", "s", "old", "new"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "two new\nthree\n" {
+		t.Fatalf("unexpected preview output: %q", out.String())
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != input {
+		t.Fatalf("preview changed source file: %q", got)
+	}
+}
+
+func TestPreviewWritesSelectedLinesToOutputFile(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	outFile := filepath.Join(dir, "snippet.txt")
+	if err := os.WriteFile(file, []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"preview", "-o", outFile, file, "1", "2", "--", "ia", "a", "\nA"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != "wrote "+outFile {
+		t.Fatalf("unexpected command output: %q", out.String())
+	}
+	got, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "a\nA\n" {
+		t.Fatalf("unexpected snippet: %q", got)
+	}
+}
+
+func TestPreviewInjectsFileAfterCommandFlags(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("func x() {\n    old()\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"preview", file, "1", "3", "--", "s", "-pad", "4", "old()", "new()"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "func x() {\n    new()\n}\n"
+	if out.String() != want {
+		t.Fatalf("unexpected preview output:\nwant %q\n got %q", want, out.String())
+	}
+}
+
 func TestBlockReplaceKeepsMarkers(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file.txt")

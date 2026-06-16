@@ -136,7 +136,31 @@ Replacement, insertion, block, line, append, and prepend commands accept small m
 rap s -pad 4 app.go 'old()' 'new()'
 rap ia -trim README.md '<!-- rap:start -->' @/tmp/block.md
 rap mv -indent 12 main.go 80 95 100
+rap preview app.go 10 20 -- s -pad 4 'old()' 'new()'
 ```
+
+### Preview a partial result
+
+```sh
+rap preview FILE FROM TO -- COMMAND [ARGS...]
+rap preview -o OUT FILE FROM TO -- COMMAND [ARGS...]
+```
+
+`preview` runs a RAP edit against a temporary copy of `FILE`, then prints only the selected line range from the edited result. The source file is not changed. The command after `--` is written like the normal RAP operation but without repeating `FILE`; RAP injects the temporary file after that command's flags. With `-o`, the selected block is written to `OUT`.
+
+```sh
+rap preview app.go 10 20 -- s 'oldName' 'newName'
+rap preview app.go 10 20 -- s -pad 4 'old()' 'new()'
+rap preview -o /tmp/snippet.go app.go 10 20 -- ia 'func main() {' @/tmp/insert.go
+rap preview README.md 40 65 -- mv -indent 12 80 95 45
+```
+
+Useful cases:
+
+- review the local effect of a replacement in a large file without reading a full `-dry-run` dump
+- save a before/after review snippet for a PR comment, issue, or another tool
+- test `-pad`, `-trim`, or `-indent` combinations before applying them to the real file
+- inspect the destination area after a move or generated block insertion
 
 ### Literal replacement
 
@@ -260,6 +284,7 @@ Use RAP when the edit is one of these shapes:
 
 - create a file from a text argument
 - append or prepend text without a marker
+- preview a selected line range after a RAP edit without changing the source file
 - replace this exact text with that exact text
 - insert text before or after a unique marker
 - replace generated content inside stable markers

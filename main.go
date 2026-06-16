@@ -44,6 +44,8 @@ Commands:
                                            append TEXT to FILE
   prepend [-pad N] [-trim] [-indent REF] FILE TEXT
                                            prepend TEXT to FILE
+  preview [-o OUT] FILE FROM TO -- COMMAND [ARGS...]
+                                           print selected lines after a RAP edit preview
   s  [-all] [-pad N] [-trim] [-indent REF] FILE OLD NEW
                                            replace literal OLD with NEW
   ia [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
@@ -74,6 +76,8 @@ Examples:
   rap write /tmp/payload @b64:aGVsbG8K
   rap append notes.md @/tmp/generated.md
   rap prepend notes.md '# Title\n\n'
+  rap preview app.go 10 20 -- s 'old' 'new'
+  rap preview -o /tmp/snippet.go app.go 10 20 -- ia 'func main() {' @/tmp/insert.txt
   rap s README.md 'old' 'new'
   rap s -pad 4 app.go 'old()' 'new()'
   rap s -all app.go @/tmp/old.txt @/tmp/new.txt
@@ -140,6 +144,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return cmdWrite(opts, cmdArgs, stdin, stdout)
 	case "append", "prepend":
 		return cmdAppendPrepend(opts, cmd, cmdArgs, stdin, stdout)
+	case "preview":
+		return cmdPreview(opts, cmdArgs, stdin, stdout)
 	case "s":
 		return cmdSubstitute(opts, cmdArgs, stdin, stdout)
 	case "ia", "ib":
@@ -464,6 +470,145 @@ func cmdAppendPrepend(opts options, cmd string, args []string, stdin io.Reader, 
 		}
 		return editResult{data: tf.finish(out), changed: true}, nil
 	})
+}
+
+func cmdPreview(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
+	outPath := fs.String("o", "", "")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	sep := -1
+	for i, arg := range rest {
+		if arg == "--" {
+			sep = i
+			break
+		}
+	}
+	if sep < 0 || sep+1 >= len(rest) || sep != 3 {
+		return errors.New("usage: rap preview [-o OUT] FILE FROM TO -- COMMAND [ARGS...]")
+	}
+	file := rest[0]
+	from, to, err := parseRange(rest[1], rest[2])
+	if err != nil {
+		return err
+	}
+	cmd := rest[sep+1]
+	cmdArgs := rest[sep+2:]
+
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp("", "rap-preview-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	tmpFile := filepath.Join(dir, filepath.Base(file))
+	if err := os.WriteFile(tmpFile, data, 0o644); err != nil {
+		return err
+	}
+	previewArgs, err := previewCommandArgs(cmd, tmpFile, cmdArgs)
+	if err != nil {
+		return err
+	}
+	var opOut, opErr bytes.Buffer
+	if err := run(append([]string{"-no-backup", cmd}, previewArgs...), stdin, &opOut, &opErr); err != nil {
+		if opErr.Len() > 0 {
+			return fmt.Errorf("preview %s failed: %w: %s", cmd, err, strings.TrimSpace(opErr.String()))
+		}
+		return fmt.Errorf("preview %s failed: %w", cmd, err)
+	}
+	result, err := os.ReadFile(tmpFile)
+	if err != nil {
+		return err
+	}
+	start, end, err := lineByteRange(result, from, to)
+	if err != nil {
+		return err
+	}
+	snippet := result[start:end]
+	if *outPath == "" || opts.dryRun {
+		_, err := stdout.Write(snippet)
+		return err
+	}
+	if err := writeAtomic(*outPath, snippet); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "wrote %s\n", *outPath)
+	return nil
+}
+
+func previewCommandArgs(cmd, file string, args []string) ([]string, error) {
+	switch cmd {
+	case "append", "prepend", "s", "ia", "ib", "br", "lr":
+		return injectFileAfterCommandFlags(cmd, file, args)
+	case "mv", "move":
+		return injectFileAfterCommandFlags("mv", file, args)
+	case "trim", "indent", "dl", "mark":
+		return append([]string{file}, args...), nil
+	default:
+		return nil, fmt.Errorf("preview does not support command %q", cmd)
+	}
+}
+
+func injectFileAfterCommandFlags(cmd, file string, args []string) ([]string, error) {
+	boolFlags := map[string]bool{}
+	valueFlags := map[string]bool{}
+	switch cmd {
+	case "s":
+		boolFlags["all"] = true
+		boolFlags["trim"] = true
+		valueFlags["pad"] = true
+		valueFlags["indent"] = true
+	case "append", "prepend", "ia", "ib", "br", "lr":
+		boolFlags["trim"] = true
+		valueFlags["pad"] = true
+		valueFlags["indent"] = true
+	case "mv":
+		boolFlags["trim"] = true
+		valueFlags["indent"] = true
+	default:
+		return nil, fmt.Errorf("preview cannot inject FILE for command %q", cmd)
+	}
+
+	idx := 0
+	for idx < len(args) {
+		arg := args[idx]
+		if arg == "--" || arg == "-" || !strings.HasPrefix(arg, "-") {
+			break
+		}
+		name := strings.TrimPrefix(arg, "-")
+		if strings.HasPrefix(name, "-") {
+			return nil, fmt.Errorf("unsupported flag %q", arg)
+		}
+		if eq := strings.IndexByte(name, '='); eq >= 0 {
+			name = name[:eq]
+		}
+		if boolFlags[name] {
+			idx++
+			continue
+		}
+		if valueFlags[name] {
+			idx++
+			if !strings.Contains(arg, "=") {
+				if idx >= len(args) {
+					return nil, fmt.Errorf("flag %s needs a value", arg)
+				}
+				idx++
+			}
+			continue
+		}
+		return nil, fmt.Errorf("unsupported flag %q", arg)
+	}
+
+	out := make([]string, 0, len(args)+1)
+	out = append(out, args[:idx]...)
+	out = append(out, file)
+	out = append(out, args[idx:]...)
+	return out, nil
 }
 
 func cmdSubstitute(opts options, args []string, stdin io.Reader, stdout io.Writer) error {

@@ -9,7 +9,7 @@ Preferred edit workflow:
 3. Use `@file`, `@-`, `@b64:...`, or `@inv:NAME` instead of shell-escaping complex text.
 4. Store repeated markers or generated snippets with `rap inv put NAME TEXT`.
 5. Use `rap mark FILE FROM TO NAME` to add stable language-aware handles before repeated edits.
-6. Prefer `rap write`, `rap append`, `rap prepend`, `rap s`, `rap ia`, `rap ib`, `rap br`, `rap lr`, `rap mv`, and `rap dl` for direct edits.
+6. Prefer `rap preview` for partial dry-run inspection, then `rap write`, `rap append`, `rap prepend`, `rap s`, `rap ia`, `rap ib`, `rap br`, `rap lr`, `rap mv`, and `rap dl` for direct edits.
 
 Avoid `sed -i`, `perl -i`, and ad hoc shell quoting unless RAP cannot express the edit. Use `apply_patch` only when an actual patch is the right representation.
 
@@ -23,6 +23,8 @@ rap inv put marker '<!-- generated:start -->'
 rap write /tmp/payload @b64:aGVsbG8K
 rap append FILE @/tmp/generated.txt
 rap prepend FILE @/tmp/header.txt
+rap preview FILE FROM TO -- s [-pad N] OLD NEW
+rap preview -o /tmp/snippet FILE FROM TO -- ia NEEDLE TEXT
 rap s [-pad N] [-trim] [-indent REF] FILE OLD NEW
 rap ia [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
 rap br [-pad N] [-trim] [-indent REF] FILE START END @/tmp/block.txt
