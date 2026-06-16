@@ -9,6 +9,9 @@ Do this:
 - Reuse project snippets with `rap inv put NAME TEXT` and `@inv:NAME`.
 - Add stable handles with `rap mark FILE FROM TO NAME` before repeated manipulation of the same block.
 - Use `@file`, `@-`, or `@b64:...` for text that contains quotes, newlines, JSON, shell syntax, or Markdown.
+- Use `rap write FILE TEXT` for temporary payload files instead of heredocs or helper scripts.
+- Use `rap append FILE TEXT` and `rap prepend FILE TEXT` when no marker is needed.
+- Use `-pad N`, `-trim`, and `-indent REF` with insert, replace, line, block, append/prepend, or move operations when that makes the command clearer.
 - Use `rap revert FILE` when a RAP edit needs to be undone.
 
 Avoid this:
@@ -22,6 +25,10 @@ Fast examples:
 ```sh
 rap q -token @/tmp/generated.txt
 rap m src/app.go 'func main() {'
-rap ia src/app.go 'func main() {' @/tmp/insert.txt
-rap br README.md '<!-- generated:start -->' '<!-- generated:end -->' @/tmp/block.md
+rap write /tmp/payload @b64:aGVsbG8K
+rap append CHANGELOG.md @/tmp/generated-entry.md
+rap s -pad 4 src/app.go 'old()' 'new()'
+rap ia -trim src/app.go 'func main() {' @/tmp/insert.txt
+rap br -indent 20 README.md '<!-- generated:start -->' '<!-- generated:end -->' @/tmp/block.md
+rap mv -indent 12 src/app.go 40 52 80
 ```

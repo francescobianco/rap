@@ -34,33 +34,53 @@ Text arguments:
   @@text         literal text starting with @
 
 Commands:
-  q  [-token] TEXT              inspect quoting risk and recommend an argument form
-  m  FILE TEXT                  print literal match locations and count
-  inv put NAME TEXT             store reusable project text
-  inv get|rm|path NAME          read, remove, or locate inventory text
-  inv list                      list reusable project text names
-  s  [-all] FILE OLD NEW        replace literal OLD with NEW
-  ia FILE NEEDLE TEXT           insert TEXT after NEEDLE
-  ib FILE NEEDLE TEXT           insert TEXT before NEEDLE
-  br FILE START END TEXT        replace text between START and END, keeping markers
-  lr FILE FROM TO TEXT          replace 1-based inclusive line range
-  dl FILE FROM TO               delete 1-based inclusive line range
-  mark FILE FROM TO NAME        wrap range with language-aware markers
-  mv FILE FROM TO DEST          move line range before DEST line
-  trim FILE [FROM TO]           strip trailing whitespace and clean newlines
-  indent FILE FROM TO REF        reindent range using REF line indentation
-  revert FILE [BACKUP]          restore FILE from BACKUP or its latest backup
+  q  [-token] TEXT                         inspect quoting risk and recommend an argument form
+  m  FILE TEXT                             print literal match locations and count
+  inv put NAME TEXT                        store reusable project text
+  inv get|rm|path NAME                     read, remove, or locate inventory text
+  inv list                                 list reusable project text names
+  write [-pad N] [-trim] FILE TEXT         create FILE with TEXT, refusing to overwrite
+  append [-pad N] [-trim] [-indent REF] FILE TEXT
+                                           append TEXT to FILE
+  prepend [-pad N] [-trim] [-indent REF] FILE TEXT
+                                           prepend TEXT to FILE
+  s  [-all] [-pad N] [-trim] [-indent REF] FILE OLD NEW
+                                           replace literal OLD with NEW
+  ia [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
+                                           insert TEXT after NEEDLE
+  ib [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
+                                           insert TEXT before NEEDLE
+  br [-pad N] [-trim] [-indent REF] FILE START END TEXT
+                                           replace text between START and END, keeping markers
+  lr [-pad N] [-trim] [-indent REF] FILE FROM TO TEXT
+                                           replace 1-based inclusive line range
+  dl FILE FROM TO                          delete 1-based inclusive line range
+  mark FILE FROM TO NAME                   wrap range with language-aware markers
+  mv [-trim] [-indent REF] FILE FROM TO DEST
+                                           move line range before DEST line
+  trim FILE [FROM TO]                      strip trailing whitespace and clean newlines
+  indent FILE FROM TO REF                  reindent range using REF line indentation
+  revert FILE [BACKUP]                     restore FILE from BACKUP or its latest backup
+
+Edit flags:
+  -pad N        prepend N spaces to each non-empty line in text arguments
+  -trim         clean trailing whitespace and final newline after the edit
+  -indent REF   reindent inserted/replaced/moved text using line REF
 
 Examples:
   rap q -token @/tmp/replacement.txt
   rap m README.md 'old'
   rap inv put marker '<!-- generated:start -->'
+  rap write /tmp/payload @b64:aGVsbG8K
+  rap append notes.md @/tmp/generated.md
+  rap prepend notes.md '# Title\n\n'
   rap s README.md 'old' 'new'
+  rap s -pad 4 app.go 'old()' 'new()'
   rap s -all app.go @/tmp/old.txt @/tmp/new.txt
-  rap ia main.go 'func main() {' @/tmp/insert.txt
-  rap br config.yml '# rap:start' '# rap:end' @/tmp/block.yml
+  rap ia -trim main.go 'func main() {' @/tmp/insert.txt
+  rap br -indent 12 config.yml '# rap:start' '# rap:end' @/tmp/block.yml
   rap lr README.md 10 12 @/tmp/replacement.md
-  rap mv README.md 20 30 10
+  rap mv -indent 19 README.md 20 30 10
   rap mark main.go 20 35 generated
   rap trim README.md
   rap indent main.go 20 28 19
@@ -116,6 +136,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return cmdMatch(cmdArgs, stdin, stdout)
 	case "inv", "inventory":
 		return cmdInventory(cmdArgs, stdin, stdout)
+	case "write":
+		return cmdWrite(opts, cmdArgs, stdin, stdout)
+	case "append", "prepend":
+		return cmdAppendPrepend(opts, cmd, cmdArgs, stdin, stdout)
 	case "s":
 		return cmdSubstitute(opts, cmdArgs, stdin, stdout)
 	case "ia", "ib":
@@ -302,21 +326,166 @@ func cmdInventory(args []string, stdin io.Reader, stdout io.Writer) error {
 	}
 }
 
+type editTransformOptions struct {
+	pad       int
+	trim      bool
+	indentRef int
+}
+
+func addEditTransformFlags(fs *flag.FlagSet, allowIndent bool) *editTransformOptions {
+	tf := &editTransformOptions{}
+	fs.IntVar(&tf.pad, "pad", 0, "")
+	fs.BoolVar(&tf.trim, "trim", false, "")
+	if allowIndent {
+		fs.IntVar(&tf.indentRef, "indent", 0, "")
+	}
+	return tf
+}
+
+func (tf editTransformOptions) validate() error {
+	if tf.pad < 0 {
+		return errors.New("-pad must be non-negative")
+	}
+	if tf.indentRef < 0 {
+		return errors.New("-indent must be non-negative")
+	}
+	return nil
+}
+
+func (tf editTransformOptions) text(text string) string {
+	if tf.pad == 0 {
+		return text
+	}
+	return padTextLines(text, strings.Repeat(" ", tf.pad))
+}
+
+func (tf editTransformOptions) block(data []byte, text string) ([]byte, error) {
+	block := []byte(tf.text(text))
+	if tf.indentRef == 0 {
+		return block, nil
+	}
+	refStart, refEnd, err := lineByteRange(data, tf.indentRef, tf.indentRef)
+	if err != nil {
+		return nil, err
+	}
+	refIndent := leadingIndent(lineWithoutNewline(data[refStart:refEnd]))
+	return reindentBlock(block, refIndent), nil
+}
+
+func (tf editTransformOptions) finish(data []byte) []byte {
+	if tf.trim {
+		return cleanWhitespace(data, true)
+	}
+	return data
+}
+
+func padTextLines(text, prefix string) string {
+	if text == "" || prefix == "" {
+		return text
+	}
+	var out strings.Builder
+	out.Grow(len(text) + len(prefix)*lineCount(text))
+	lineStart := true
+	for i := 0; i < len(text); i++ {
+		if lineStart && text[i] != '\n' {
+			out.WriteString(prefix)
+		}
+		out.WriteByte(text[i])
+		lineStart = text[i] == '\n'
+	}
+	return out.String()
+}
+
+func cmdWrite(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet("write", flag.ContinueOnError)
+	tf := addEditTransformFlags(fs, false)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := tf.validate(); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 2 {
+		return errors.New("usage: rap write [-pad N] [-trim] FILE TEXT")
+	}
+	file := rest[0]
+	text, err := textArg(rest[1], stdin)
+	if err != nil {
+		return err
+	}
+	data := []byte(tf.finish([]byte(tf.text(text))))
+	if _, err := os.Stat(file); err == nil {
+		return fmt.Errorf("%s already exists", file)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if opts.dryRun {
+		_, err := stdout.Write(data)
+		return err
+	}
+	if err := writeAtomic(file, data); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "created %s\n", file)
+	return nil
+}
+
+func cmdAppendPrepend(opts options, cmd string, args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	tf := addEditTransformFlags(fs, true)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := tf.validate(); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 2 {
+		return fmt.Errorf("usage: rap %s [-pad N] [-trim] [-indent REF] FILE TEXT", cmd)
+	}
+	file := rest[0]
+	text, err := textArg(rest[1], stdin)
+	if err != nil {
+		return err
+	}
+	return editFile(opts, file, stdout, func(data []byte) (editResult, error) {
+		block, err := tf.block(data, text)
+		if err != nil {
+			return editResult{}, err
+		}
+		out := make([]byte, 0, len(data)+len(block))
+		if cmd == "prepend" {
+			out = append(out, block...)
+			out = append(out, data...)
+		} else {
+			out = append(out, data...)
+			out = append(out, block...)
+		}
+		return editResult{data: tf.finish(out), changed: true}, nil
+	})
+}
+
 func cmdSubstitute(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
 	fs := flag.NewFlagSet("s", flag.ContinueOnError)
 	all := fs.Bool("all", false, "")
+	tf := addEditTransformFlags(fs, true)
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := tf.validate(); err != nil {
 		return err
 	}
 	rest := fs.Args()
 	if len(rest) != 3 {
-		return errors.New("usage: rap s [-all] FILE OLD NEW")
+		return errors.New("usage: rap s [-all] [-pad N] [-trim] [-indent REF] FILE OLD NEW")
 	}
 	file := rest[0]
 	oldText, err := textArg(rest[1], stdin)
 	if err != nil {
 		return err
 	}
+	oldText = tf.text(oldText)
 	newText, err := textArg(rest[2], stdin)
 	if err != nil {
 		return err
@@ -325,6 +494,10 @@ func cmdSubstitute(opts options, args []string, stdin io.Reader, stdout io.Write
 		oldBytes := []byte(oldText)
 		if len(oldBytes) == 0 {
 			return editResult{}, errors.New("OLD must not be empty")
+		}
+		newBytes, err := tf.block(data, newText)
+		if err != nil {
+			return editResult{}, err
 		}
 		count := bytes.Count(data, oldBytes)
 		if count == 0 {
@@ -337,20 +510,30 @@ func cmdSubstitute(opts options, args []string, stdin io.Reader, stdout io.Write
 		if *all {
 			n = -1
 		}
-		return editResult{data: bytes.Replace(data, oldBytes, []byte(newText), n), changed: true}, nil
+		return editResult{data: tf.finish(bytes.Replace(data, oldBytes, newBytes, n)), changed: true}, nil
 	})
 }
 
 func cmdInsert(opts options, cmd string, args []string, stdin io.Reader, stdout io.Writer) error {
-	if len(args) != 3 {
-		return fmt.Errorf("usage: rap %s FILE NEEDLE TEXT", cmd)
+	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
+	tf := addEditTransformFlags(fs, true)
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	file := args[0]
-	needle, err := textArg(args[1], stdin)
+	if err := tf.validate(); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 3 {
+		return fmt.Errorf("usage: rap %s [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT", cmd)
+	}
+	file := rest[0]
+	needle, err := textArg(rest[1], stdin)
 	if err != nil {
 		return err
 	}
-	insert, err := textArg(args[2], stdin)
+	needle = tf.text(needle)
+	insert, err := textArg(rest[2], stdin)
 	if err != nil {
 		return err
 	}
@@ -358,6 +541,10 @@ func cmdInsert(opts options, cmd string, args []string, stdin io.Reader, stdout 
 		needleBytes := []byte(needle)
 		if len(needleBytes) == 0 {
 			return editResult{}, errors.New("NEEDLE must not be empty")
+		}
+		insertBytes, err := tf.block(data, insert)
+		if err != nil {
+			return editResult{}, err
 		}
 		count := bytes.Count(data, needleBytes)
 		if count == 0 {
@@ -370,28 +557,39 @@ func cmdInsert(opts options, cmd string, args []string, stdin io.Reader, stdout 
 		if cmd == "ia" {
 			idx += len(needleBytes)
 		}
-		out := make([]byte, 0, len(data)+len(insert))
+		out := make([]byte, 0, len(data)+len(insertBytes))
 		out = append(out, data[:idx]...)
-		out = append(out, insert...)
+		out = append(out, insertBytes...)
 		out = append(out, data[idx:]...)
-		return editResult{data: out, changed: true}, nil
+		return editResult{data: tf.finish(out), changed: true}, nil
 	})
 }
 
 func cmdBlockReplace(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
-	if len(args) != 4 {
-		return errors.New("usage: rap br FILE START END TEXT")
+	fs := flag.NewFlagSet("br", flag.ContinueOnError)
+	tf := addEditTransformFlags(fs, true)
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	file := args[0]
-	start, err := textArg(args[1], stdin)
+	if err := tf.validate(); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 4 {
+		return errors.New("usage: rap br [-pad N] [-trim] [-indent REF] FILE START END TEXT")
+	}
+	file := rest[0]
+	start, err := textArg(rest[1], stdin)
 	if err != nil {
 		return err
 	}
-	end, err := textArg(args[2], stdin)
+	start = tf.text(start)
+	end, err := textArg(rest[2], stdin)
 	if err != nil {
 		return err
 	}
-	replacement, err := textArg(args[3], stdin)
+	end = tf.text(end)
+	replacement, err := textArg(rest[3], stdin)
 	if err != nil {
 		return err
 	}
@@ -400,6 +598,10 @@ func cmdBlockReplace(opts options, args []string, stdin io.Reader, stdout io.Wri
 		endBytes := []byte(end)
 		if len(startBytes) == 0 || len(endBytes) == 0 {
 			return editResult{}, errors.New("START and END must not be empty")
+		}
+		replacementBytes, err := tf.block(data, replacement)
+		if err != nil {
+			return editResult{}, err
 		}
 		startIdx := bytes.Index(data, startBytes)
 		if startIdx < 0 {
@@ -417,24 +619,33 @@ func cmdBlockReplace(opts options, args []string, stdin io.Reader, stdout io.Wri
 		if bytes.Index(data[contentEnd+len(endBytes):], endBytes) >= 0 {
 			return editResult{}, errors.New("END matched more than once after selected block")
 		}
-		out := make([]byte, 0, len(data)-contentEnd+contentStart+len(replacement))
+		out := make([]byte, 0, len(data)-contentEnd+contentStart+len(replacementBytes))
 		out = append(out, data[:contentStart]...)
-		out = append(out, replacement...)
+		out = append(out, replacementBytes...)
 		out = append(out, data[contentEnd:]...)
-		return editResult{data: out, changed: true}, nil
+		return editResult{data: tf.finish(out), changed: true}, nil
 	})
 }
 
 func cmdLineReplace(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
-	if len(args) != 4 {
-		return errors.New("usage: rap lr FILE FROM TO TEXT")
+	fs := flag.NewFlagSet("lr", flag.ContinueOnError)
+	tf := addEditTransformFlags(fs, true)
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	file := args[0]
-	from, to, err := parseRange(args[1], args[2])
+	if err := tf.validate(); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 4 {
+		return errors.New("usage: rap lr [-pad N] [-trim] [-indent REF] FILE FROM TO TEXT")
+	}
+	file := rest[0]
+	from, to, err := parseRange(rest[1], rest[2])
 	if err != nil {
 		return err
 	}
-	replacement, err := textArg(args[3], stdin)
+	replacement, err := textArg(rest[3], stdin)
 	if err != nil {
 		return err
 	}
@@ -443,11 +654,15 @@ func cmdLineReplace(opts options, args []string, stdin io.Reader, stdout io.Writ
 		if err != nil {
 			return editResult{}, err
 		}
-		out := make([]byte, 0, len(data)-(end-start)+len(replacement))
+		replacementBytes, err := tf.block(data, replacement)
+		if err != nil {
+			return editResult{}, err
+		}
+		out := make([]byte, 0, len(data)-(end-start)+len(replacementBytes))
 		out = append(out, data[:start]...)
-		out = append(out, replacement...)
+		out = append(out, replacementBytes...)
 		out = append(out, data[end:]...)
-		return editResult{data: out, changed: true}, nil
+		return editResult{data: tf.finish(out), changed: true}, nil
 	})
 }
 
@@ -554,15 +769,25 @@ func cmdIndent(opts options, args []string, stdout io.Writer) error {
 }
 
 func cmdMove(opts options, args []string, stdout io.Writer) error {
-	if len(args) != 4 {
-		return errors.New("usage: rap mv FILE FROM TO DEST")
+	fs := flag.NewFlagSet("mv", flag.ContinueOnError)
+	trim := fs.Bool("trim", false, "")
+	indentRef := fs.Int("indent", 0, "")
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	file := args[0]
-	from, to, err := parseRange(args[1], args[2])
+	if *indentRef < 0 {
+		return errors.New("-indent must be non-negative")
+	}
+	rest := fs.Args()
+	if len(rest) != 4 {
+		return errors.New("usage: rap mv [-trim] [-indent REF] FILE FROM TO DEST")
+	}
+	file := rest[0]
+	from, to, err := parseRange(rest[1], rest[2])
 	if err != nil {
 		return err
 	}
-	dest, err := strconv.Atoi(args[3])
+	dest, err := strconv.Atoi(rest[3])
 	if err != nil {
 		return fmt.Errorf("DEST must be an integer: %w", err)
 	}
@@ -579,19 +804,33 @@ func cmdMove(opts options, args []string, stdout io.Writer) error {
 			return editResult{}, err
 		}
 		if destOffset >= start && destOffset <= end {
+			if *trim {
+				return editResult{data: cleanWhitespace(data, true), changed: true}, nil
+			}
 			return editResult{data: data, changed: false}, nil
 		}
 		block := append([]byte(nil), data[start:end]...)
+		if *indentRef > 0 {
+			refStart, refEnd, err := lineByteRange(data, *indentRef, *indentRef)
+			if err != nil {
+				return editResult{}, err
+			}
+			refIndent := leadingIndent(lineWithoutNewline(data[refStart:refEnd]))
+			block = reindentBlock(block, refIndent)
+		}
 		without := make([]byte, 0, len(data)-(end-start))
 		without = append(without, data[:start]...)
 		without = append(without, data[end:]...)
 		if destOffset > end {
 			destOffset -= end - start
 		}
-		out := make([]byte, 0, len(data))
+		out := make([]byte, 0, len(without)+len(block))
 		out = append(out, without[:destOffset]...)
 		out = append(out, block...)
 		out = append(out, without[destOffset:]...)
+		if *trim {
+			out = cleanWhitespace(out, true)
+		}
 		return editResult{data: out, changed: true}, nil
 	})
 }
@@ -1142,8 +1381,11 @@ func backupKey(abs string) string {
 }
 
 func writeAtomic(file string, data []byte) error {
+	mode := os.FileMode(0o644)
 	info, err := os.Stat(file)
-	if err != nil {
+	if err == nil {
+		mode = info.Mode()
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	dir := filepath.Dir(file)
@@ -1157,7 +1399,7 @@ func writeAtomic(file string, data []byte) error {
 		tmp.Close()
 		return err
 	}
-	if err := tmp.Chmod(info.Mode()); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		tmp.Close()
 		return err
 	}

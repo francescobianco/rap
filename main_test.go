@@ -165,6 +165,142 @@ func TestSubstituteAll(t *testing.T) {
 	}
 }
 
+func TestSubstituteAllowsEmptyReplacement(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("keep remove keep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "s", file, " remove", ""}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "keep keep\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestWriteAppendAndPrepend(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "write", file, "body\n"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"-no-backup", "append", file, "tail\n"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"-no-backup", "prepend", file, "head\n"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "head\nbody\ntail\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestWriteRefusesToOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "write", file, "new\n"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("expected write to refuse overwriting an existing file")
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "old\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestSubstitutePadAppliesToOldAndNew(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("func x() {\n    old()\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "s", "-pad", "4", file, "old()", "new()"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "func x() {\n    new()\n}\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestInsertTrimCleansResult(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a  \nmarker\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "ia", "-trim", file, "marker", "\nb  \n"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "a\nmarker\nb\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestMoveIndentReindentsMovedBlock(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	input := "func x() {\n    ref\n}\na\n  b\nz\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "mv", "-indent", "2", file, "4", "5", "3"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "func x() {\n    ref\n    a\n      b\n}\nz\n"
+	if string(got) != want {
+		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
+	}
+}
+
 func TestBlockReplaceKeepsMarkers(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file.txt")
