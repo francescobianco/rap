@@ -9,6 +9,12 @@ RAP keeps the useful part: exact file edits, short commands, no interactivity, l
 ## Install
 
 ```sh
+go install github.com/francescobianco/rap@latest
+```
+
+From a local checkout:
+
+```sh
 make install
 ```
 
@@ -124,7 +130,7 @@ rap prepend notes.md $'# Title\n\n'
 
 ### Edit flags
 
-Replacement, insertion, block, line, append, and prepend commands accept small macro flags:
+Replacement, insertion, block, line, append, and prepend commands accept small transform flags:
 
 ```sh
 -pad N
@@ -225,6 +231,19 @@ rap p -n app.go 40 55 -- rb @i:before @i:old @i:after @/tmp/new.txt
 
 ### Replace or delete line ranges
 
+```sh
+rap lr [-pad N] [-trim] [-indent REF] FILE FROM TO TEXT
+rap dl FILE FROM TO
+```
+
+Line numbers are 1-based and inclusive. They are useful for quick local edits, but they are intentionally the least stable selector: if the file changes between inspection and application, the same range can point at different text. Prefer `s`, `rb`, `br`, or `mark` when the target can be named by content or context.
+
+```sh
+rap lr README.md 10 12 @/tmp/replacement.md
+rap lr -indent 9 main.go 20 30 @/tmp/replacement.go
+rap dl debug.log 1 20
+```
+
 ### Move, trim, and reindent line ranges
 
 ### Add manipulation handles
@@ -259,19 +278,6 @@ rap mv README.md 40 52 20
 rap mv -indent 79 main.go 80 95 120
 rap trim README.md
 rap indent main.go 80 95 79
-```
-
-```sh
-rap lr [-pad N] [-trim] [-indent REF] FILE FROM TO TEXT
-rap dl FILE FROM TO
-```
-
-Line numbers are 1-based and inclusive.
-
-```sh
-rap lr README.md 10 12 @/tmp/replacement.md
-rap lr -indent 9 main.go 20 30 @/tmp/replacement.go
-rap dl debug.log 1 20
 ```
 
 ### Revert
@@ -324,3 +330,20 @@ rap br README.md '<!-- generated:start -->' '<!-- generated:end -->' @-
 ```
 
 Use `apply_patch` when you actually want a patch. Use RAP when you want the file changed. Use `sed` and `perl -i` when you miss debugging punctuation.
+
+## Design Notes
+
+### Line fingerprints
+
+Line-number commands are convenient, but line numbers are coordinates, not identity. A future RAP locator could print a short per-line fingerprint next to preview output, then accept that fingerprint as a guard when applying a range edit. The useful idea is not "replace line 42"; it is "replace the line that used to be line 42 and still has this content fingerprint".
+
+A four-character CRC is a good human-facing hint, but it should not be the only authority. With many lines, short hashes collide. RAP should treat fingerprints as checked selectors: fail on zero matches, fail on multiple matches, and ideally combine the fingerprint with nearby context or the original line text. That keeps the property RAP cares about most: deterministic edits that refuse to guess.
+
+A practical shape could be:
+
+```sh
+rap preview -n --hash FILE FROM TO -- s OLD NEW
+rap lrh FILE FROM_HASH TO_HASH @/tmp/replacement.txt
+```
+
+The exact command names are open, but the rule should stay simple: hashes can make moved unchanged lines findable, while ambiguity still fails loudly.
