@@ -62,6 +62,59 @@ func TestSubstituteWithBase64Argument(t *testing.T) {
 	}
 }
 
+func TestInventoryAliasesSaveTokens(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "home")
+	t.Setenv("HOME", home)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	file := "file.txt"
+	if err := os.WriteFile(file, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"i", "put", "replacement", "new\n"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"-no-backup", "s", file, "old\n", "@i:replacement"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestPreviewShortAlias(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	input := "one\ntwo old\nthree\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"p", file, "2", "2", "--", "s", "old", "new"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "two new\n" {
+		t.Fatalf("unexpected preview output: %q", out.String())
+	}
+}
+
 func TestInventoryCanStoreAndReuseProjectText(t *testing.T) {
 	dir := t.TempDir()
 	home := filepath.Join(dir, "home")
@@ -409,6 +462,71 @@ func TestBlockReplaceKeepsMarkers(t *testing.T) {
 	want := "a\n# start\nnew\n# end\nz\n"
 	if string(got) != want {
 		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
+	}
+}
+
+func TestContextReplaceRequiresUniqueFullContext(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	input := "alpha\nold\nomega\n\nalpha\nold\ndelta\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "rb", file, "alpha\n", "old\n", "omega\n", "new\n"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "alpha\nnew\nomega\n\nalpha\nold\ndelta\n"
+	if string(got) != want {
+		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
+	}
+}
+
+func TestContextReplaceRejectsAmbiguousFullContext(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	input := "alpha\nold\nomega\nalpha\nold\nomega\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "rb", file, "alpha\n", "old\n", "omega\n", "new\n"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("expected ambiguous context replacement to fail")
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != input {
+		t.Fatalf("file changed after failed edit: %q", got)
+	}
+}
+
+func TestUpdateOutputIncludesChangeSummary(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "s", file, "old\n", "new\nline\n"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "updated "+file) || !strings.Contains(got, "lines 1 -> 2") || !strings.Contains(got, "bytes +5") {
+		t.Fatalf("unexpected update output: %q", got)
 	}
 }
 

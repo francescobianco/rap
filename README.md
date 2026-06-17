@@ -45,6 +45,8 @@ text           literal text
 @path          read text from a file
 @-             read text from stdin
 @b64:BASE64    decode text from base64
+@inv:NAME      read text from this project's inventory
+@i:NAME        shorthand for @inv:NAME
 @@text         literal text that starts with @
 ```
 
@@ -55,11 +57,11 @@ This is the most important quoting escape hatch. If text contains quotes, backsl
 ### Project inventory
 
 ```sh
-rap inv put NAME TEXT
-rap inv get NAME
-rap inv list
-rap inv rm NAME
-rap inv path [NAME]
+rap inv put NAME TEXT      # or: rap i put NAME TEXT
+rap inv get NAME           # or: rap i get NAME
+rap inv list               # or: rap i list
+rap inv rm NAME            # or: rap i rm NAME
+rap inv path [NAME]        # or: rap i path [NAME]
 ```
 
 Inventory stores reusable snippets for the current project under `$HOME/.rap/project/<pwd-with-dashes>/inventory`. Use it for markers, boilerplate, generated blocks, or any text an agent would otherwise keep re-quoting until everyone involved loses patience.
@@ -144,6 +146,7 @@ rap preview app.go 10 20 -- s -pad 4 'old()' 'new()'
 ```sh
 rap preview [-n] FILE FROM TO -- COMMAND [ARGS...]
 rap preview [-n] -o OUT FILE FROM TO -- COMMAND [ARGS...]
+rap p [-n] FILE FROM TO -- COMMAND [ARGS...]
 ```
 
 `preview` runs a RAP edit against a temporary copy of `FILE`, then prints only the selected line range from the edited result. The source file is not changed. The command after `--` is written like the normal RAP operation but without repeating `FILE`; RAP injects the temporary file after that command's flags. With `-o`, the selected block is written to `OUT`. Add `-n` to include a left gutter with line numbers from the edited result.
@@ -205,6 +208,19 @@ rap br [-pad N] [-trim] [-indent REF] FILE START END TEXT
 ```sh
 rap br config.yml '# rap:start' '# rap:end' @/tmp/generated.yml
 rap br -indent 20 main.go '// rap:start generated' '// rap:end generated' @/tmp/new.go
+```
+
+### Replace inside required context
+
+```sh
+rap rb [-pad N] [-trim] [-indent REF] FILE BEFORE OLD AFTER NEW
+```
+
+`rb` replaces `OLD` only when the full literal context `BEFORE + OLD + AFTER` exists exactly once. It is safer than line ranges when nearby lines may shift, and more compact than manually building a larger `OLD` block when only the middle should change.
+
+```sh
+rap rb app.go @/tmp/before.txt @/tmp/old.txt @/tmp/after.txt @/tmp/new.txt
+rap p -n app.go 40 55 -- rb @i:before @i:old @i:after @/tmp/new.txt
 ```
 
 ### Replace or delete line ranges
@@ -277,7 +293,7 @@ RAP is meant to be discovered without a human repeating the same instruction in 
 - `CLAUDE.md` for Claude Code
 - `README.md` command docs for every other agent that scans project documentation
 
-Agents should read those files and use RAP as the default edit path. The short rule is: inspect with `rap m`, control quoting with `rap q`, reuse snippets with `rap inv`, edit with RAP commands, revert with `rap revert`.
+Agents should read those files and use RAP as the default edit path. The short rule is: inspect with `rap m`, control quoting with `rap q`, reuse snippets with `rap inv` or `rap i`, edit with RAP commands, revert with `rap revert`.
 
 ## Agent Notes
 
@@ -289,6 +305,7 @@ Use RAP when the edit is one of these shapes:
 - replace this exact text with that exact text
 - insert text before or after a unique marker
 - replace generated content inside stable markers
+- replace text inside required literal context
 - replace, move, or delete a known line range
 - combine insertion/replacement/move with padding, trimming, or indentation
 - revert the last RAP edit for a file

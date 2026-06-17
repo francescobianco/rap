@@ -31,20 +31,21 @@ Text arguments:
   @-             read text from stdin
   @b64:BASE64    decode text from base64
   @inv:NAME      read text from this project's inventory
+  @i:NAME        shorthand for @inv:NAME
   @@text         literal text starting with @
 
 Commands:
   q  [-token] TEXT                         inspect quoting risk and recommend an argument form
   m  FILE TEXT                             print literal match locations and count
-  inv put NAME TEXT                        store reusable project text
-  inv get|rm|path NAME                     read, remove, or locate inventory text
-  inv list                                 list reusable project text names
+  inv|i put NAME TEXT                      store reusable project text
+  inv|i get|rm|path NAME                   read, remove, or locate inventory text
+  inv|i list                               list reusable project text names
   write [-pad N] [-trim] FILE TEXT         create FILE with TEXT, refusing to overwrite
   append [-pad N] [-trim] [-indent REF] FILE TEXT
                                            append TEXT to FILE
   prepend [-pad N] [-trim] [-indent REF] FILE TEXT
                                            prepend TEXT to FILE
-  preview [-n] [-o OUT] FILE FROM TO -- COMMAND [ARGS...]
+  preview|p [-n] [-o OUT] FILE FROM TO -- COMMAND [ARGS...]
                                            print selected lines after a RAP edit preview
   s  [-all] [-pad N] [-trim] [-indent REF] FILE OLD NEW
                                            replace literal OLD with NEW
@@ -54,6 +55,8 @@ Commands:
                                            insert TEXT before NEEDLE
   br [-pad N] [-trim] [-indent REF] FILE START END TEXT
                                            replace text between START and END, keeping markers
+  rb [-pad N] [-trim] [-indent REF] FILE BEFORE OLD AFTER NEW
+                                           replace OLD inside one required literal context
   lr [-pad N] [-trim] [-indent REF] FILE FROM TO TEXT
                                            replace 1-based inclusive line range
   dl FILE FROM TO                          delete 1-based inclusive line range
@@ -139,13 +142,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return cmdQuote(cmdArgs, stdin, stdout)
 	case "m", "match":
 		return cmdMatch(cmdArgs, stdin, stdout)
-	case "inv", "inventory":
+	case "inv", "inventory", "i":
 		return cmdInventory(cmdArgs, stdin, stdout)
 	case "write":
 		return cmdWrite(opts, cmdArgs, stdin, stdout)
 	case "append", "prepend":
 		return cmdAppendPrepend(opts, cmd, cmdArgs, stdin, stdout)
-	case "preview":
+	case "preview", "p":
 		return cmdPreview(opts, cmdArgs, stdin, stdout)
 	case "s":
 		return cmdSubstitute(opts, cmdArgs, stdin, stdout)
@@ -153,6 +156,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return cmdInsert(opts, cmd, cmdArgs, stdin, stdout)
 	case "br":
 		return cmdBlockReplace(opts, cmdArgs, stdin, stdout)
+	case "rb":
+		return cmdContextReplace(opts, cmdArgs, stdin, stdout)
 	case "lr":
 		return cmdLineReplace(opts, cmdArgs, stdin, stdout)
 	case "mark":
@@ -563,7 +568,7 @@ func numberLines(data []byte, from, to int) []byte {
 
 func previewCommandArgs(cmd, file string, args []string) ([]string, error) {
 	switch cmd {
-	case "append", "prepend", "s", "ia", "ib", "br", "lr":
+	case "append", "prepend", "s", "ia", "ib", "br", "rb", "lr":
 		return injectFileAfterCommandFlags(cmd, file, args)
 	case "mv", "move":
 		return injectFileAfterCommandFlags("mv", file, args)
@@ -583,7 +588,7 @@ func injectFileAfterCommandFlags(cmd, file string, args []string) ([]string, err
 		boolFlags["trim"] = true
 		valueFlags["pad"] = true
 		valueFlags["indent"] = true
-	case "append", "prepend", "ia", "ib", "br", "lr":
+	case "append", "prepend", "ia", "ib", "br", "rb", "lr":
 		boolFlags["trim"] = true
 		valueFlags["pad"] = true
 		valueFlags["indent"] = true
@@ -788,6 +793,70 @@ func cmdBlockReplace(opts options, args []string, stdin io.Reader, stdout io.Wri
 		out = append(out, data[:contentStart]...)
 		out = append(out, replacementBytes...)
 		out = append(out, data[contentEnd:]...)
+		return editResult{data: tf.finish(out), changed: true}, nil
+	})
+}
+
+func cmdContextReplace(opts options, args []string, stdin io.Reader, stdout io.Writer) error {
+	fs := flag.NewFlagSet("rb", flag.ContinueOnError)
+	tf := addEditTransformFlags(fs, true)
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := tf.validate(); err != nil {
+		return err
+	}
+	rest := fs.Args()
+	if len(rest) != 5 {
+		return errors.New("usage: rap rb [-pad N] [-trim] [-indent REF] FILE BEFORE OLD AFTER NEW")
+	}
+	file := rest[0]
+	before, err := textArg(rest[1], stdin)
+	if err != nil {
+		return err
+	}
+	before = tf.text(before)
+	oldText, err := textArg(rest[2], stdin)
+	if err != nil {
+		return err
+	}
+	oldText = tf.text(oldText)
+	after, err := textArg(rest[3], stdin)
+	if err != nil {
+		return err
+	}
+	after = tf.text(after)
+	newText, err := textArg(rest[4], stdin)
+	if err != nil {
+		return err
+	}
+	return editFile(opts, file, stdout, func(data []byte) (editResult, error) {
+		beforeBytes := []byte(before)
+		oldBytes := []byte(oldText)
+		afterBytes := []byte(after)
+		if len(beforeBytes) == 0 || len(oldBytes) == 0 || len(afterBytes) == 0 {
+			return editResult{}, errors.New("BEFORE, OLD, and AFTER must not be empty")
+		}
+		newBytes, err := tf.block(data, newText)
+		if err != nil {
+			return editResult{}, err
+		}
+		target := make([]byte, 0, len(beforeBytes)+len(oldBytes)+len(afterBytes))
+		target = append(target, beforeBytes...)
+		target = append(target, oldBytes...)
+		target = append(target, afterBytes...)
+		count := bytes.Count(data, target)
+		if count == 0 {
+			return editResult{}, errors.New("context not found")
+		}
+		if count > 1 {
+			return editResult{}, fmt.Errorf("context matched %d times; make BEFORE/OLD/AFTER more specific", count)
+		}
+		idx := bytes.Index(data, target) + len(beforeBytes)
+		out := make([]byte, 0, len(data)-len(oldBytes)+len(newBytes))
+		out = append(out, data[:idx]...)
+		out = append(out, newBytes...)
+		out = append(out, data[idx+len(oldBytes):]...)
 		return editResult{data: tf.finish(out), changed: true}, nil
 	})
 }
@@ -1081,8 +1150,12 @@ func editFile(opts options, file string, stdout io.Writer, edit func([]byte) (ed
 	if err := writeAtomic(file, result.data); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "updated %s\n", file)
+	fmt.Fprintf(stdout, "updated %s (%s)\n", file, changeSummary(data, result.data))
 	return nil
+}
+
+func changeSummary(before, after []byte) string {
+	return fmt.Sprintf("lines %d -> %d, bytes %+d", lineCount(string(before)), lineCount(string(after)), len(after)-len(before))
 }
 
 func textArg(arg string, stdin io.Reader) (string, error) {
@@ -1102,6 +1175,9 @@ func textArg(arg string, stdin io.Reader) (string, error) {
 	}
 	if strings.HasPrefix(arg, "@inv:") {
 		return inventoryText(arg[len("@inv:"):])
+	}
+	if strings.HasPrefix(arg, "@i:") {
+		return inventoryText(arg[len("@i:"):])
 	}
 	if strings.HasPrefix(arg, "@") {
 		data, err := os.ReadFile(arg[1:])
