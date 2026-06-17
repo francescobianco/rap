@@ -286,10 +286,10 @@ func TestWriteRefusesToOverwrite(t *testing.T) {
 	}
 }
 
-func TestSubstitutePadAppliesToOldAndNew(t *testing.T) {
+func TestSubstitutePadDoesNotChangeOldMatch(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file.txt")
-	if err := os.WriteFile(file, []byte("func x() {\n    old()\n}\n"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("old()\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -303,7 +303,7 @@ func TestSubstitutePadAppliesToOldAndNew(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "func x() {\n    new()\n}\n" {
+	if string(got) != "    new()\n" {
 		t.Fatalf("unexpected file content: %q", got)
 	}
 }
@@ -327,6 +327,116 @@ func TestInsertTrimCleansResult(t *testing.T) {
 	}
 	if string(got) != "a\nmarker\nb\n" {
 		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestInsertLineBoundaryAddsMissingNewline(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a\nmarker\nz\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "ib", file, "marker", "before"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if err := run([]string{"-no-backup", "ia", file, "marker", "after"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "a\nbefore\nmarker\nafter\nz\n"
+	if string(got) != want {
+		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
+	}
+}
+
+func TestLineReplaceAddsMissingTrailingNewline(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a\nb\nc\nd\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "lr", file, "2", "3", "NEW"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "a\nNEW\nd\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestInsertPadDoesNotChangeNeedle(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("line1\nline2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "ia", "-pad", "2", file, "line2", "NEW"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "line1\nline2\n  NEW\n" {
+		t.Fatalf("unexpected file content: %q", got)
+	}
+}
+
+func TestPreviewErrorHintsThatFileIsInjected(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("a\nb\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"preview", file, "1", "2", "--", "s", file, "b", "B"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("expected preview command with duplicate FILE to fail")
+	}
+	if !strings.Contains(err.Error(), "omit FILE after --") {
+		t.Fatalf("preview error missing hint: %v", err)
+	}
+}
+
+func TestSubstituteAllReportsReplacementCount(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("one two one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := run([]string{"-no-backup", "s", "-all", file, "one", "three"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "replacements 2") {
+		t.Fatalf("update output missing replacement count: %q", out.String())
+	}
+}
+
+func TestVersionCommand(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if err := run([]string{"version"}, strings.NewReader(""), &out, &errOut); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "rap ") {
+		t.Fatalf("unexpected version output: %q", out.String())
 	}
 }
 
@@ -426,16 +536,16 @@ func TestPreviewLineNumbersTrackEditedResult(t *testing.T) {
 func TestPreviewInjectsFileAfterCommandFlags(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "file.txt")
-	if err := os.WriteFile(file, []byte("func x() {\n    old()\n}\n"), 0o644); err != nil {
+	if err := os.WriteFile(file, []byte("old()\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	var out, errOut bytes.Buffer
-	err := run([]string{"preview", file, "1", "3", "--", "s", "-pad", "4", "old()", "new()"}, strings.NewReader(""), &out, &errOut)
+	err := run([]string{"preview", file, "1", "1", "--", "s", "-pad", "4", "old()", "new()"}, strings.NewReader(""), &out, &errOut)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "func x() {\n    new()\n}\n"
+	want := "    new()\n"
 	if out.String() != want {
 		t.Fatalf("unexpected preview output:\nwant %q\n got %q", want, out.String())
 	}
@@ -527,6 +637,30 @@ func TestUpdateOutputIncludesChangeSummary(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "updated "+file) || !strings.Contains(got, "lines 1 -> 2") || !strings.Contains(got, "bytes +5") {
 		t.Fatalf("unexpected update output: %q", got)
+	}
+}
+
+func TestContextReplaceAllowsEmptyAfterWithUniquePrefix(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	input := "alpha old\nbeta old\n"
+	if err := os.WriteFile(file, []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	err := run([]string{"-no-backup", "rb", file, "alpha ", "old", "", "new"}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "alpha new\nbeta old\n"
+	if string(got) != want {
+		t.Fatalf("unexpected file content:\nwant %q\n got %q", want, got)
 	}
 }
 

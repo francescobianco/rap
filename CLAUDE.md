@@ -15,7 +15,7 @@ Do this:
 - Use `rap preview -o OUT FILE FROM TO -- COMMAND ...` to save that preview block.
 - Use `rap write FILE TEXT` for temporary payload files instead of heredocs or helper scripts.
 - Use `rap append FILE TEXT` and `rap prepend FILE TEXT` when no marker is needed.
-- Use `-pad N`, `-trim`, and `-indent REF` with insert, replace, line, block, append/prepend, or move operations when that makes the command clearer.
+- Use `-pad N`, `-trim`, and `-indent N` with insert, replace, line, block, append/prepend, or move operations when that makes the command clearer; `-pad` affects inserted/replacement text, not match patterns.
 - Use `rap revert FILE` when a RAP edit needs to be undone.
 
 Avoid this:

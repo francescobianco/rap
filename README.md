@@ -135,10 +135,10 @@ Replacement, insertion, block, line, append, and prepend commands accept small t
 ```sh
 -pad N
 -trim
--indent REF
+-indent N
 ```
 
-`-pad N` prepends `N` spaces to each non-empty line in text arguments before matching or writing. `-trim` cleans trailing whitespace and normalizes the final newline after the edit. `-indent REF` reindents inserted, replaced, appended, prepended, or moved text using the indentation of line `REF`.
+`-pad N` prepends `N` spaces to each non-empty inserted or replacement line; it does not change `OLD`, `NEEDLE`, or marker text used for matching. `-trim` cleans trailing whitespace and normalizes the final newline after the edit. `-indent N` reindents inserted, replaced, appended, prepended, or moved text using the indentation of line `N`.
 
 ```sh
 rap s -pad 4 app.go 'old()' 'new()'
@@ -155,7 +155,7 @@ rap preview [-n] -o OUT FILE FROM TO -- COMMAND [ARGS...]
 rap p [-n] FILE FROM TO -- COMMAND [ARGS...]
 ```
 
-`preview` runs a RAP edit against a temporary copy of `FILE`, then prints only the selected line range from the edited result. The source file is not changed. The command after `--` is written like the normal RAP operation but without repeating `FILE`; RAP injects the temporary file after that command's flags. With `-o`, the selected block is written to `OUT`. Add `-n` to include a left gutter with line numbers from the edited result.
+`preview` runs a RAP edit against a temporary copy of `FILE`, then prints only the selected line range from the edited result. The source file is not changed. The command after `--` is written like the normal RAP operation but without repeating `FILE`; RAP injects the temporary file after that command's flags and reports a hint if `FILE` is accidentally repeated. With `-o`, the selected block is written to `OUT`. Add `-n` to include a left gutter with line numbers from the edited result.
 
 ```sh
 rap preview app.go 10 20 -- s 'oldName' 'newName'
@@ -175,8 +175,8 @@ Useful cases:
 ### Literal replacement
 
 ```sh
-rap s [-pad N] [-trim] [-indent REF] FILE OLD NEW
-rap s -all [-pad N] [-trim] [-indent REF] FILE OLD NEW
+rap s [-pad N] [-trim] [-indent N] FILE OLD NEW
+rap s -all [-pad N] [-trim] [-indent N] FILE OLD NEW
 ```
 
 `rap s` replaces one exact literal match. If `OLD` matches zero times or more than once, RAP exits with an error. Use `-all` only when replacing every match is intentional.
@@ -192,11 +192,11 @@ rap s -all app.go @/tmp/old.txt @/tmp/new.txt
 ### Insert after or before a marker
 
 ```sh
-rap ia [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
-rap ib [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
+rap ia [-pad N] [-trim] [-indent N] FILE NEEDLE TEXT
+rap ib [-pad N] [-trim] [-indent N] FILE NEEDLE TEXT
 ```
 
-`ia` inserts after a unique marker. `ib` inserts before a unique marker.
+`ia` inserts after a unique marker. `ib` inserts before a unique marker. When the insertion point is a line boundary and `TEXT` does not already provide its own newline, RAP terminates the inserted block so adjacent lines are not fused.
 
 ```sh
 rap ia main.go 'func main() {' @/tmp/insert.txt
@@ -206,7 +206,7 @@ rap ib README.md '## Commands' $'## Quick Start\n\n'
 ### Replace a block between markers
 
 ```sh
-rap br [-pad N] [-trim] [-indent REF] FILE START END TEXT
+rap br [-pad N] [-trim] [-indent N] FILE START END TEXT
 ```
 
 `br` replaces the content between `START` and `END`, while keeping both markers. The start and end markers must identify exactly one block.
@@ -219,10 +219,10 @@ rap br -indent 20 main.go '// rap:start generated' '// rap:end generated' @/tmp/
 ### Replace inside required context
 
 ```sh
-rap rb [-pad N] [-trim] [-indent REF] FILE BEFORE OLD AFTER NEW
+rap rb [-pad N] [-trim] [-indent N] FILE BEFORE OLD AFTER NEW
 ```
 
-`rb` replaces `OLD` only when the full literal context `BEFORE + OLD + AFTER` exists exactly once. It is safer than line ranges when nearby lines may shift, and more compact than manually building a larger `OLD` block when only the middle should change.
+`rb` replaces `OLD` only when the full literal context `BEFORE + OLD + AFTER` exists exactly once. `OLD` must be non-empty, and at least one of `BEFORE` or `AFTER` must be non-empty, so prefix-only or suffix-only anchors are allowed when they are still unique. It is safer than line ranges when nearby lines may shift, and more compact than manually building a larger `OLD` block when only the middle should change.
 
 ```sh
 rap rb app.go @/tmp/before.txt @/tmp/old.txt @/tmp/after.txt @/tmp/new.txt
@@ -232,11 +232,11 @@ rap p -n app.go 40 55 -- rb @i:before @i:old @i:after @/tmp/new.txt
 ### Replace or delete line ranges
 
 ```sh
-rap lr [-pad N] [-trim] [-indent REF] FILE FROM TO TEXT
+rap lr [-pad N] [-trim] [-indent N] FILE FROM TO TEXT
 rap dl FILE FROM TO
 ```
 
-Line numbers are 1-based and inclusive. They are useful for quick local edits, but they are intentionally the least stable selector: if the file changes between inspection and application, the same range can point at different text. Prefer `s`, `rb`, `br`, or `mark` when the target can be named by content or context.
+Line numbers are 1-based and inclusive. `lr` treats `TEXT` as a line block and adds a missing trailing newline for non-empty replacements, preventing the replacement from fusing with the following line. Line numbers are useful for quick local edits, but they are intentionally the least stable selector: if the file changes between inspection and application, the same range can point at different text. Prefer `s`, `rb`, `br`, or `mark` when the target can be named by content or context.
 
 ```sh
 rap lr README.md 10 12 @/tmp/replacement.md
@@ -262,12 +262,12 @@ rap br main.go '// rap:start generated-loader' '// rap:end generated-loader' @/t
 For Markdown and HTML-family files it uses `<!-- rap:start NAME -->`; for Go/JS/C-style files it uses `//`; for Python/YAML/shell it uses `#`; for CSS it uses `/* ... */`.
 
 ```sh
-rap mv [-trim] [-indent REF] FILE FROM TO DEST
+rap mv [-trim] [-indent N] FILE FROM TO DEST
 rap trim FILE [FROM TO]
 rap indent FILE FROM TO REF
 ```
 
-`mv` moves the inclusive line range `FROM..TO` before line `DEST` in the same file, using coordinates from the original file. Add `-indent REF` to reindent the moved block during the move, and `-trim` to clean the resulting file.
+`mv` moves the inclusive line range `FROM..TO` before line `DEST` in the same file, using coordinates from the original file. Add `-indent N` to reindent the moved block during the move, and `-trim` to clean the resulting file.
 
 `trim` removes trailing spaces/tabs, normalizes dirty line endings, and leaves a clean final newline for whole-file runs. With `FROM TO`, it cleans only that range.
 
@@ -279,6 +279,15 @@ rap mv -indent 79 main.go 80 95 120
 rap trim README.md
 rap indent main.go 80 95 79
 ```
+
+### Version
+
+```sh
+rap version
+rap --version
+```
+
+`version` prints the RAP version string, which is useful in agent logs and reproducible bug reports.
 
 ### Revert
 

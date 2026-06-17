@@ -27,11 +27,12 @@ rap prepend FILE @/tmp/header.txt
 rap preview [-n] FILE FROM TO -- s [-pad N] OLD NEW
 rap p [-n] FILE FROM TO -- rb @i:before OLD AFTER NEW
 rap preview [-n] -o /tmp/snippet FILE FROM TO -- ia NEEDLE TEXT
-rap s [-pad N] [-trim] [-indent REF] FILE OLD NEW
-rap ia [-pad N] [-trim] [-indent REF] FILE NEEDLE TEXT
-rap br [-pad N] [-trim] [-indent REF] FILE START END @/tmp/block.txt
-rap rb [-pad N] [-trim] [-indent REF] FILE BEFORE OLD AFTER NEW
-rap lr [-pad N] [-trim] [-indent REF] FILE FROM TO @/tmp/replacement.txt
-rap mv [-trim] [-indent REF] FILE FROM TO DEST
+rap s [-pad N] [-trim] [-indent N] FILE OLD NEW
+rap ia [-pad N] [-trim] [-indent N] FILE NEEDLE TEXT
+rap br [-pad N] [-trim] [-indent N] FILE START END @/tmp/block.txt
+rap rb [-pad N] [-trim] [-indent N] FILE BEFORE OLD AFTER NEW
+rap lr [-pad N] [-trim] [-indent N] FILE FROM TO @/tmp/replacement.txt
+rap version
+rap mv [-trim] [-indent N] FILE FROM TO DEST
 rap revert FILE
 ```
