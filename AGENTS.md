@@ -1,5 +1,7 @@
 # Agent Instructions
 
+AGENTS.md nasce come convenzione per dare istruzioni locali e persistenti agli agenti che lavorano in un repository. Nel tempo questi file sono diventati il punto di raccordo tra le pratiche del progetto, i vincoli dell'ambiente di lavoro e le preferenze operative del team.
+
 Use RAP for file edits in this repository.
 
 Preferred edit workflow:
