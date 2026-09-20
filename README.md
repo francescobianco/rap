@@ -1,9 +1,22 @@
-<h1 align="center">RAP — Real Apply Patch</h1>
+<h1 align="center">RAP</h1>
 
-<p align="center">
-  <em>The editing tool your coding agent should have had from day one.</em><br>
-  <strong>Fewer tokens. Fewer retries. Output written for the next decision, not for a human reading a terminal.</strong>
-</p>
+<p align="center"><strong>Real Apply Patch</strong> — the file-editing tool for coding agents</p>
+
+<br>
+
+<h1 align="center">Your agent stops paying to read files.</h1>
+
+<h1 align="center"><code>&nbsp;~25,000 tokens&nbsp;&nbsp;→&nbsp;&nbsp;~50&nbsp;</code></h1>
+
+<p align="center"><sub>to change one line in a 2,000-line file</sub></p>
+
+<br>
+
+<p align="center">Why it works, in three words:</p>
+
+<h1 align="center">lines, not files</h1>
+
+<br>
 
 <p align="center">
   <a href="https://github.com/francescobianco/rap/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/francescobianco/rap/actions/workflows/ci.yml/badge.svg"></a>
@@ -15,39 +28,58 @@
 
 ---
 
-## Why RAP exists
+## Why it works
 
-An LLM editing a file does not have a token problem. It has an **output** problem.
+Your agent has to change three lines in a 2,000-line file.
 
-Every tool an agent calls answers in a language designed for a human staring at a terminal: verbose diffs, decorative progress, silence on success, a wall of context on failure. The agent has to *read* all of that, pay for all of that, and then infer what actually happened. A one-line change turns into thousands of tokens of ceremony — and one hallucinated assumption about whether the edit even landed.
+**The usual way:** it reads all 2,000 lines into its context window, thinks, writes the change back, and often reads the file *again* to check the edit landed. The whole file is carried into the model — twice. The agent just paid for 1,997 lines it did not care about, and every later turn keeps carrying them.
 
-RAP inverts the contract. **Every command answers the question the agent is actually about to ask**, in one line, in a shape that advances the loop:
+**With RAP:** it names the text to change, and RAP finds it.
 
 ```console
 $ rap s app.go 'oldName' 'newName'
 updated app.go (lines 1697 -> 1699, bytes +133, replacements 1)
 ```
 
-That single line closes the loop. The edit landed. One replacement, not seven. The file grew by two lines, so cached line numbers downstream are now off by two. No diff to re-read, no file to re-open, no "let me verify" round trip. The agent already knows enough to take the next step.
+The file was never opened by the agent. That one line is the entire answer: the edit landed, exactly once, and the file is now two lines longer. Nothing to re-read, nothing to verify.
 
-When RAP is *not* sure, it refuses — loudly, cheaply, before touching the file:
+That is the whole trick. **RAP addresses code by content, not by coordinates** — so the unit of work is a few lines you already know, never a file you have to load.
+
+### "But the agent needs to see the file"
+
+It needs to see *the lines it is changing*. It already has those — from a grep, from the task, from the code it just wrote a minute ago. It does not need the other 1,997.
+
+And when it genuinely needs to look, RAP hands it a window, not the building:
+
+| The agent's question | What it costs |
+|---|---|
+| Is this target unique? | `rap m FILE 'text'` → `matches: 1` — **one line back** |
+| What will it look like after? | `rap preview -n FILE 40 60 -- s OLD NEW` — **20 lines back** |
+| How do I pass this messy text? | `rap q -token @file` → `@b64:…` — **one line back** |
+| Did it work? | the command's own receipt — **one line back** |
+
+Four questions an agent asks constantly. None of them costs a file read.
+
+### And when it is not sure, it stops
 
 ```console
 $ rap s app.go 'count' 'total'
 rap: OLD matched 3 times; use -all or a more specific OLD
 ```
 
-A failure that costs a dozen tokens and zero damage beats a `sed -i` that confidently edits the wrong occurrence and is discovered three steps later, after the agent has built reasoning on top of a corrupted file.
+Nothing was written. A failure costing a dozen tokens beats a `sed -i` that confidently edits the wrong occurrence — and gets discovered three steps later, after the agent has built reasoning on top of a corrupted file.
 
 ### The token math
 
 | Task | Conventional agent loop | With RAP |
 |---|---|---|
-| Change one line in a 2 000-line file | read the file (~25 000 tk) → emit a rewrite (~25 000 tk) | `rap s FILE OLD NEW` (~40 tk in, ~20 tk out) |
-| Confirm the edit landed | re-read the file or a full diff (~25 000 tk) | the command's own receipt line (~20 tk) |
+| Change one line in a 2,000-line file | read the file (~25,000 tk) → emit a rewrite (~25,000 tk) | `rap s FILE OLD NEW` (~40 tk in, ~20 tk out) |
+| Confirm the edit landed | re-read the file or a full diff (~25,000 tk) | the command's own receipt line (~20 tk) |
 | Check a target is unique before editing | read and scan the file | `rap m FILE TEXT` → `matches: 1` |
 | Inspect the result of an edit | `-dry-run` dumping the whole file | `rap preview -n FILE 40 60 -- s OLD NEW` — only the lines that moved |
 | Pass text full of quotes, JSON, newlines | escape, fail, re-escape, fail again | `rap q -token` → `@b64:…`, done in one shot |
+
+<sub>Figures are arithmetic from file size at roughly 4 characters per token, not a measured benchmark — a published one is <a href="ROADMAP.md">on the roadmap</a>. The ratio moves with your file sizes; the mechanism does not.</sub>
 
 The savings are not the point by themselves. The point is what the savings buy: a context window spent on **reasoning about the code** instead of on transporting the code.
 
