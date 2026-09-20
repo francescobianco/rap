@@ -16,7 +16,9 @@ import (
 	"unicode/utf8"
 )
 
-const version = "dev"
+// version is the RAP release string. Release builds override it with
+// -ldflags "-X main.version=<tag>"; source builds report "dev".
+var version = "dev"
 
 const usageText = `rap - Real Apply Patch
 
