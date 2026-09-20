@@ -3,15 +3,15 @@
 <p align="center"><strong>Real Apply Patch</strong> — the file-editing tool for coding agents</p>
 
 <p align="center">
-  <img src="assets/rap-demo.svg" alt="A terminal replays two ways to change one line in a 2,041-line file: reading it costs about 24,800 tokens, the equivalent rap command costs about 52 — 99% fewer tokens for the same edit." width="880">
-</p>
-
-<p align="center">
   <a href="https://github.com/francescobianco/rap/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/francescobianco/rap/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/francescobianco/rap/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/francescobianco/rap?color=blue"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/francescobianco/rap"></a>
   <img alt="Go" src="https://img.shields.io/badge/go-1.22%2B-00ADD8">
   <img alt="Dependencies" src="https://img.shields.io/badge/dependencies-0-success">
+</p>
+
+<p align="center">
+  <img src="assets/rap-demo.svg" alt="A terminal replays two ways to change one line in a 2,041-line file: reading it costs about 24,800 tokens, the equivalent rap command costs about 52 — 99% fewer tokens for the same edit." width="880">
 </p>
 
 ---
