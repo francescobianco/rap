@@ -2,21 +2,9 @@
 
 <p align="center"><strong>Real Apply Patch</strong> — the file-editing tool for coding agents</p>
 
-<br>
-
-<h1 align="center">Your agent stops paying to read files.</h1>
-
-<h1 align="center"><code>&nbsp;~25,000 tokens&nbsp;&nbsp;→&nbsp;&nbsp;~50&nbsp;</code></h1>
-
-<p align="center"><sub>to change one line in a 2,000-line file</sub></p>
-
-<br>
-
-<p align="center">Why it works, in three words:</p>
-
-<h1 align="center">lines, not files</h1>
-
-<br>
+<p align="center">
+  <img src="assets/rap-demo.svg" alt="A terminal replays two ways to change one line in a 2,041-line file: reading it costs about 24,800 tokens, the equivalent rap command costs about 52 — 99% fewer tokens for the same edit." width="880">
+</p>
 
 <p align="center">
   <a href="https://github.com/francescobianco/rap/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/francescobianco/rap/actions/workflows/ci.yml/badge.svg"></a>
@@ -25,6 +13,19 @@
   <img alt="Go" src="https://img.shields.io/badge/go-1.22%2B-00ADD8">
   <img alt="Dependencies" src="https://img.shields.io/badge/dependencies-0-success">
 </p>
+
+---
+
+> ### 💸 Your agent is paying to read files it barely changes
+>
+> 🧠 To change **one line**, the usual loop loads **all 2,000** into the context window — and keeps carrying them, turn after turn.
+>
+> ⚡ RAP does the same edit for **~50 tokens**. The file is never opened.
+>
+> 🎯 **Why it works, in three words: `lines, not files`.**
+> RAP addresses code **by content, not by coordinates** — so the unit of work is the handful of lines your agent already knows, never a file it has to load.
+>
+> 🛑 And when a target is ambiguous, it **refuses instead of guessing**. A failure costs a dozen tokens; a wrong `sed -i` costs the rest of the session.
 
 ---
 
@@ -97,6 +98,16 @@ This is why RAP makes agents behave more intelligently: not because the model go
 
 ## Install
 
+### 🤖 From inside your coding agent
+
+The shortest path: paste this into Claude Code, Codex, Cursor, or whatever agent you already have open.
+
+```text
+Install this https://github.com/francescobianco/rap
+```
+
+It reads this page, picks the binary for your platform, installs it, and drops the instruction file it needs into your repository. Which is the point — the tool is for the agent, so let the agent set it up.
+
 ### One line, no toolchain
 
 ```sh
@@ -108,7 +119,7 @@ Detects your OS and architecture, downloads the prebuilt binary from the latest
 
 ```sh
 # Pin a version, or choose the directory
-RAP_VERSION=v1.0.0 RAP_BINDIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/francescobianco/rap/main/install.sh | sh
+RAP_VERSION=v1.0.1 RAP_BINDIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/francescobianco/rap/main/install.sh | sh
 ```
 
 ### Direct download

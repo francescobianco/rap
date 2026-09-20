@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 392" width="900" height="392" role="img" aria-labelledby="t d">
+<title id="t">RAP saves an agent the cost of reading the file</title>
+<desc id="d">A terminal replays two ways to change one line in a 2,041-line file. Reading the file costs about 24,800 tokens; the equivalent rap command costs about 52. The closing line reads: 99% fewer tokens for the same edit.</desc>
+<style>
+.m{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:15px}
+.big{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:25px;font-weight:700}
+.tt{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;font-size:13px}
+@keyframes f1{0%,2.667%{opacity:0}5.0%,100%{opacity:1}}
+@keyframes t2{0%,2.667%{transform:translateX(-499px)}9.333%,96.0%{transform:translateX(0)}96.667%,100%{transform:translateX(-499px)}}
+@keyframes k4{0%,2.667%{opacity:0;transform:translateX(0)}3.0%{opacity:1}9.333%{opacity:1;transform:translateX(495px)}9.667%,100%{opacity:0;transform:translateX(495px)}}
+@keyframes f5{0%,11.333%{opacity:0}13.667%,100%{opacity:1}}
+@keyframes t6{0%,11.333%{transform:translateX(-157px)}15.333%,96.0%{transform:translateX(0)}96.667%,100%{transform:translateX(-157px)}}
+@keyframes k8{0%,11.333%{opacity:0;transform:translateX(0)}11.667%{opacity:1}15.333%{opacity:1;transform:translateX(153px)}15.667%,100%{opacity:0;transform:translateX(153px)}}
+@keyframes f9{0%,16.667%{opacity:0}19.0%,100%{opacity:1}}
+@keyframes f10{0%,16.667%{opacity:0}19.0%,100%{opacity:1}}
+@keyframes t11{0%,17.667%{transform:translateX(-362px)}22.333%,96.0%{transform:translateX(0)}96.667%,100%{transform:translateX(-362px)}}
+@keyframes f13{0%,17.667%{opacity:0}20.0%,100%{opacity:1}}
+@keyframes f14{0%,24.0%{opacity:0}26.333%,100%{opacity:1}}
+@keyframes t15{0%,24.0%{transform:translateX(-355px)}29.333%,96.0%{transform:translateX(0)}96.667%,100%{transform:translateX(-355px)}}
+@keyframes k17{0%,24.0%{opacity:0;transform:translateX(0)}24.333%{opacity:1}29.333%{opacity:1;transform:translateX(351px)}29.667%,100%{opacity:0;transform:translateX(351px)}}
+@keyframes f18{0%,31.333%{opacity:0}33.667%,100%{opacity:1}}
+@keyframes t19{0%,31.333%{transform:translateX(-418px)}38.667%,96.0%{transform:translateX(0)}96.667%,100%{transform:translateX(-418px)}}
+@keyframes k21{0%,31.333%{opacity:0;transform:translateX(0)}31.667%{opacity:1}38.667%{opacity:1;transform:translateX(414px)}39.0%,100%{opacity:0;transform:translateX(414px)}}
+@keyframes f22{0%,41.333%{opacity:0}43.667%,100%{opacity:1}}
+@keyframes f23{0%,45.333%{opacity:0}47.667%,100%{opacity:1}}
+@keyframes f24{0%,45.333%{opacity:0}47.667%,100%{opacity:1}}
+@keyframes f25{0%,46.333%{opacity:0}48.667%,100%{opacity:1}}
+@keyframes f26{0%,46.333%{opacity:0}48.667%,100%{opacity:1}}
+@keyframes f27{0%,49.333%{opacity:0}51.667%,100%{opacity:1}}
+@keyframes f28{0%,52.667%{opacity:0;transform:translateY(10px)}55.0%,100%{opacity:1;transform:translateY(0)}}
+@keyframes screen{0%,90.0%{opacity:1}96.0%,100%{opacity:0}}
+</style>
+<rect x="0.5" y="0.5" width="899" height="391" rx="10" fill="#0d1117" stroke="#30363d"/>
+<path d="M0.5 10.5a10 10 0 0 1 10-10h879a10 10 0 0 1 10 10V44H0.5z" fill="#161b22"/>
+<line x1="0.5" y1="44" x2="899.5" y2="44" stroke="#30363d"/>
+<circle cx="24" cy="22" r="6" fill="#ff5f56"/><circle cx="44" cy="22" r="6" fill="#ffbd2e"/><circle cx="64" cy="22" r="6" fill="#27c93f"/>
+<text x="450.0" y="27" class="tt" text-anchor="middle" fill="#8b949e">coding agent — one line to change</text>
+<g style="animation:screen 15.0s infinite">
+<text x="28" y="88" class="m" fill="#3fb950" style="animation:f1 15.0s infinite">$</text>
+<text x="46.0" y="88" class="m" fill="#6e7681" clip-path="url(#c3)"># the usual way: load the whole file to change one line</text>
+<rect x="46.0" y="76" width="8" height="16" fill="#c9d1d9" style="animation:k4 15.0s infinite linear"/>
+<text x="28" y="115" class="m" fill="#3fb950" style="animation:f5 15.0s infinite">$</text>
+<text x="46.0" y="115" class="m" fill="#c9d1d9" clip-path="url(#c7)">cat src/server.go</text>
+<rect x="46.0" y="103" width="8" height="16" fill="#c9d1d9" style="animation:k8 15.0s infinite linear"/>
+<text x="28" y="146" class="m" fill="#8b949e" style="animation:f9 15.0s infinite">2,041 lines into context</text>
+<rect x="320" y="135" width="360" height="13" rx="2" fill="#30363d" opacity="0.35" style="animation:f10 15.0s infinite"/>
+<rect x="320" y="135" width="360.0" height="13" rx="2" fill="#f85149" clip-path="url(#c12)"/>
+<text x="872" y="146" class="m" text-anchor="end" fill="#f85149" style="animation:f13 15.0s infinite">~24,800 tokens</text>
+<text x="28" y="188" class="m" fill="#3fb950" style="animation:f14 15.0s infinite">$</text>
+<text x="46.0" y="188" class="m" fill="#6e7681" clip-path="url(#c16)"># with rap: name the text, not the file</text>
+<rect x="46.0" y="176" width="8" height="16" fill="#c9d1d9" style="animation:k17 15.0s infinite linear"/>
+<text x="28" y="215" class="m" fill="#3fb950" style="animation:f18 15.0s infinite">$</text>
+<text x="46.0" y="215" class="m" fill="#c9d1d9" clip-path="url(#c20)">rap s src/server.go 'parseAddr' 'parseAddress'</text>
+<rect x="46.0" y="203" width="8" height="16" fill="#c9d1d9" style="animation:k21 15.0s infinite linear"/>
+<text x="28" y="242" class="m" fill="#3fb950" style="animation:f22 15.0s infinite">updated src/server.go (lines 2041 -&gt; 2041, bytes +14, replacements 1)</text>
+<text x="28" y="273" class="m" fill="#8b949e" style="animation:f23 15.0s infinite">0 lines read</text>
+<rect x="320" y="262" width="360" height="13" rx="2" fill="#30363d" opacity="0.35" style="animation:f24 15.0s infinite"/>
+<rect x="320" y="262" width="3.0" height="13" rx="1.5" fill="#3fb950" style="animation:f25 15.0s infinite"/>
+<text x="872" y="273" class="m" text-anchor="end" fill="#3fb950" style="animation:f26 15.0s infinite">~52 tokens</text>
+<line x1="28.0" y1="306" x2="872" y2="306" stroke="#30363d" stroke-width="1" style="animation:f27 15.0s infinite"/>
+<text x="28.0" y="344" class="big" fill="#3fb950" style="animation:f28 15.0s infinite">✔ 99% fewer tokens for the same edit</text>
+</g>
+<defs>
+<clipPath id="c3"><rect x="46" y="74" width="499" height="22" style="animation:t2 15.0s infinite steps(60,end)"/></clipPath>
+<clipPath id="c7"><rect x="46" y="101" width="157" height="22" style="animation:t6 15.0s infinite steps(60,end)"/></clipPath>
+<clipPath id="c12"><rect x="320" y="134" width="362" height="15" style="animation:t11 15.0s infinite steps(60,end)"/></clipPath>
+<clipPath id="c16"><rect x="46" y="174" width="355" height="22" style="animation:t15 15.0s infinite steps(60,end)"/></clipPath>
+<clipPath id="c20"><rect x="46" y="201" width="418" height="22" style="animation:t19 15.0s infinite steps(60,end)"/></clipPath>
+</defs>
+</svg>
