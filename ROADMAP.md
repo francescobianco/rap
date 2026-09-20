@@ -41,11 +41,11 @@ The 1.0 line freezes the command surface and the output contract. From here on, 
 - [x] GitHub description and topics set
 - [x] `CHANGELOG.md` following Keep a Changelog
 
-### Remaining before the tag
+### Shipped
 
-- [x] Green CI run on all three operating systems
-- [x] Published `v1.0.0` release with verified assets
-- [ ] Verify `install.sh` end to end against the published release
+- [x] Green CI run on Linux, macOS and Windows
+- [x] Published release with verified assets for all five platform targets
+- [x] `install.sh` verified end to end against the published release
 
 ---
 
