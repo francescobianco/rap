@@ -1,6 +1,4 @@
-<h1 align="center">💿</h1>
-
-<h1 align="center">RAP</h1>
+<h1 align="center">💿 RAP</h1>
 
 <p align="center"><strong>Real Apply Patch</strong> — the file-editing tool for coding agents</p>
 
