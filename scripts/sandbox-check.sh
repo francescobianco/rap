@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# sandbox-check.sh - environment diagnostic for agent sandboxes.
+#
+# Reports whether bubblewrap, user namespaces and AppArmor are configured so
+# that sandboxed coding agents can run on this machine. Not required by RAP
+# itself; kept here as a troubleshooting aid.
 
 set -euo pipefail
 
@@ -29,10 +34,10 @@ echo "Bubblewrap"
 echo "-----------------------------"
 
 if command -v bwrap >/dev/null; then
-    ok "bwrap trovato: $(command -v bwrap)"
+    ok "bwrap found: $(command -v bwrap)"
     bwrap --version || true
 else
-    err "bubblewrap NON installato"
+    err "bubblewrap NOT installed"
 fi
 
 echo
@@ -41,10 +46,10 @@ echo "Codex"
 echo "-----------------------------"
 
 if command -v codex >/dev/null; then
-    ok "codex trovato"
+    ok "codex found"
     codex --version || true
 else
-    err "codex non trovato nel PATH"
+    err "codex not found in PATH"
 fi
 
 echo
@@ -57,9 +62,9 @@ if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
     echo "kernel.unprivileged_userns_clone = $VALUE"
 
     if [ "$VALUE" = "1" ]; then
-        ok "user namespaces abilitate"
+        ok "user namespaces enabled"
     else
-        warn "user namespaces DISABILITATE"
+        warn "user namespaces DISABLED"
     fi
 fi
 
@@ -68,9 +73,9 @@ if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
     echo "kernel.apparmor_restrict_unprivileged_userns = $VALUE"
 
     if [ "$VALUE" = "1" ]; then
-        warn "AppArmor restringe gli user namespace"
+        warn "AppArmor restricts user namespaces"
     else
-        ok "AppArmor non li restringe"
+        ok "AppArmor does not restrict them"
     fi
 fi
 
@@ -80,20 +85,20 @@ echo "AppArmor"
 echo "-----------------------------"
 
 if systemctl is-active --quiet apparmor; then
-    ok "servizio AppArmor attivo"
+    ok "AppArmor service active"
 else
-    warn "servizio AppArmor NON attivo"
+    warn "AppArmor service NOT active"
 fi
 
 if [ -f /etc/apparmor.d/bwrap-userns-restrict ]; then
-    ok "profilo bwrap presente"
+    ok "bwrap profile present"
 else
-    warn "profilo /etc/apparmor.d/bwrap-userns-restrict assente"
+    warn "profile /etc/apparmor.d/bwrap-userns-restrict missing"
 fi
 
 echo
 echo "-----------------------------"
-echo "Test bubblewrap"
+echo "Bubblewrap test"
 echo "-----------------------------"
 
 if command -v bwrap >/dev/null; then
@@ -104,10 +109,10 @@ if command -v bwrap >/dev/null; then
         --dev /dev \
         /bin/sh -c 'echo sandbox-ok' >/tmp/bwrap-test.out 2>/tmp/bwrap-test.err
     then
-        ok "Bubblewrap funziona"
+        ok "Bubblewrap works"
         cat /tmp/bwrap-test.out
     else
-        err "Bubblewrap NON funziona"
+        err "Bubblewrap does NOT work"
         echo
         cat /tmp/bwrap-test.err
     fi
@@ -115,5 +120,5 @@ fi
 
 echo
 echo "======================================"
-echo " Diagnostica completata"
+echo " Diagnostics complete"
 echo "======================================"
