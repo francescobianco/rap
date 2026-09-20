@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 See [ROADMAP.md](ROADMAP.md) for what is planned.
 
+## [1.0.1] - 2026-09-20
+
+### Fixed
+
+- Backup and inventory paths now honour `$HOME` on every platform. On Windows,
+  `os.UserHomeDir` reads `USERPROFILE` and silently ignored an explicit `HOME`, so
+  RAP wrote its state somewhere other than the `$HOME/.rap` the documentation
+  promises. This surfaced as a failing test on the Windows CI runner.
+
 ## [1.0.0] - 2026-09-20
 
 First stable release. The command surface and the output contract are now public API:
@@ -43,5 +52,6 @@ agents branch on what RAP prints, so within the 1.x line the shape of that outpu
   is why IDE state under `.idea/` had been committed; it is now untracked and ignored.
 - All remaining Italian text removed from the repository's sources, documentation and scripts.
 
-[Unreleased]: https://github.com/francescobianco/rap/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/francescobianco/rap/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/francescobianco/rap/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/francescobianco/rap/releases/tag/v1.0.0

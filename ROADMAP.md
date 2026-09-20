@@ -43,8 +43,8 @@ The 1.0 line freezes the command surface and the output contract. From here on, 
 
 ### Remaining before the tag
 
-- [ ] Green CI run on all three operating systems
-- [ ] Published `v1.0.0` release with verified assets
+- [x] Green CI run on all three operating systems
+- [x] Published `v1.0.0` release with verified assets
 - [ ] Verify `install.sh` end to end against the published release
 
 ---

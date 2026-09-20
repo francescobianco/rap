@@ -1617,12 +1617,24 @@ func inventoryPath(name string) (string, error) {
 	return filepath.Join(dir, name), nil
 }
 
+// rapHome returns the directory holding RAP's backup and inventory state.
+//
+// $HOME wins when it is set, because every command and every document refers
+// to that location as $HOME/.rap. On Windows os.UserHomeDir reads USERPROFILE
+// and would silently ignore an explicit HOME, so it is only the fallback.
+func rapHome() (string, error) {
+	if home := os.Getenv("HOME"); home != "" {
+		return home, nil
+	}
+	return os.UserHomeDir()
+}
+
 func inventoryDir() (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	home, err := os.UserHomeDir()
+	home, err := rapHome()
 	if err != nil {
 		return "", err
 	}
@@ -1653,7 +1665,7 @@ func backupDir(file string) (string, string, error) {
 		return "", "", err
 	}
 	abs = filepath.Clean(abs)
-	home, err := os.UserHomeDir()
+	home, err := rapHome()
 	if err != nil {
 		return "", "", err
 	}
